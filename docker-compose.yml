@@ -1,0 +1,25 @@
+services:
+  # Servicio 1: Base de Datos con capacidad Vectorial para la IA
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: insight_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - insight_pgdata:/var/lib/postgresql/data
+
+  # Servicio 2: Caché y Cola de tareas para scraping
+  redis:
+    image: redis:alpine
+    container_name: insight_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT}:6379"
+
+volumes:
+  insight_pgdata:
