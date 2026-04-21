@@ -1,0 +1,18 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model RawNeed {
+  id        String                      @id @default(uuid())
+  content   String
+  sourceUrl String
+  embedding Unsupported("vector(768)")?
+  createdAt DateTime                    @default(now())
+}
