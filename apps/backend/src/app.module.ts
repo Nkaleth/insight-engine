@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { validate } from './config/config.schema';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/logger.config';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { winstonConfig } from './config/logger.config';
       isGlobal: true
     }),
     WinstonModule.forRoot(winstonConfig),
+    AuthModule,
   ],
   controllers: [],
   providers: [],
