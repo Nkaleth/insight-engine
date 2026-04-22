@@ -8,6 +8,7 @@ export const envSchema = z.object({
   // Zod coerce convierte los numéros de texto del .env a Number reales
   POSTGRES_PORT: z.coerce.number().default(5432),
   REDIS_PORT: z.coerce.number().default(6379),
+  JWT_SECRET: z.string(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
