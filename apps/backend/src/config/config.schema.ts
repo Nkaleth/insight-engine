@@ -9,6 +9,7 @@ export const envSchema = z.object({
   POSTGRES_PORT: z.coerce.number().default(5432),
   REDIS_PORT: z.coerce.number().default(6379),
   JWT_SECRET: z.string(),
+  DATABASE_URL: z.url(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

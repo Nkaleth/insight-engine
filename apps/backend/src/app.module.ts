@@ -4,6 +4,7 @@ import { validate } from './config/config.schema';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
     }),
     WinstonModule.forRoot(winstonConfig),
     AuthModule,
+    UsersModule,
   ],
   controllers: [],
   providers: [],
