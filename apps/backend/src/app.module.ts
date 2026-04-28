@@ -5,6 +5,7 @@ import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { YoutubeModule } from './youtube/youtube.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UsersModule } from './users/users.module';
     WinstonModule.forRoot(winstonConfig),
     AuthModule,
     UsersModule,
+    YoutubeModule
   ],
   controllers: [],
   providers: [],
