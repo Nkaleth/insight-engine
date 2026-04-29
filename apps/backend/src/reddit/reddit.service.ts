@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { SCRAPER_QUEUE } from 'src/queue/queue.module';
 
 @Injectable()
 export class RedditService {
@@ -10,7 +13,10 @@ export class RedditService {
 
   constructor(
     private readonly httpService: HttpService, // 5. Tipado: ¿Qué tipo de servicio es este?
-    private readonly configService: ConfigService // 6. Tipado: ¿Qué tipo de servicio es este?
+    private readonly configService: ConfigService, // 6. Tipado: ¿Qué tipo de servicio es este?
+
+    @InjectQueue(SCRAPER_QUEUE)
+    private readonly scraperQueue: Queue,
   ) {
     this.userAgent = this.configService.getOrThrow<string>('REDDIT_USER_AGENT');
   }
@@ -34,7 +40,15 @@ export class RedditService {
 
       // Axios devuelve la data en un objeto llamado "data", 
       // y Reddit anida su respuesta dentro de "data.children".
-      return response.data.data.children;
+      const posts = response.data.data.children;
+
+      await this.scraperQueue.add('analyze-reddit-data', {
+        subreddit: subreddit,
+        postsCount: posts.length,
+        rawData: posts
+      });
+
+      return posts;
     } catch (error) {
       this.logger.error(`Error al extraer datos de Reddit: ${error.message}`);
       throw error;

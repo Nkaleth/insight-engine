@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { YoutubeModule } from './youtube/youtube.module';
 import { RedditModule } from './reddit/reddit.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { RedditModule } from './reddit/reddit.module';
     AuthModule,
     UsersModule,
     YoutubeModule,
-    RedditModule
+    RedditModule,
+    QueueModule
   ],
   controllers: [],
   providers: [],
