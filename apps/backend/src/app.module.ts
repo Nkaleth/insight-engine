@@ -6,6 +6,7 @@ import { winstonConfig } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { YoutubeModule } from './youtube/youtube.module';
+import { RedditModule } from './reddit/reddit.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { YoutubeModule } from './youtube/youtube.module';
     WinstonModule.forRoot(winstonConfig),
     AuthModule,
     UsersModule,
-    YoutubeModule
+    YoutubeModule,
+    RedditModule
   ],
   controllers: [],
   providers: [],
