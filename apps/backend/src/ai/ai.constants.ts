@@ -1,0 +1,1 @@
+export const OLLAMA_CLIENT = 'OLLAMA_CLIENT';
