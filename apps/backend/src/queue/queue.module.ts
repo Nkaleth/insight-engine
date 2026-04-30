@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScraperProcessor } from './scraper.processor';
+import { RedditModule } from '../reddit/reddit.module';
 
 // Constante para evitar "Magic Strings" (Errores de tipeo) en toda la app
 export const SCRAPER_QUEUE = 'scraper';
@@ -21,10 +23,12 @@ export const SCRAPER_QUEUE = 'scraper';
 
     // 2. Registro de nuestra "Bandeja de Entrada" específica
     BullModule.registerQueue({ name: SCRAPER_QUEUE }),
+    RedditModule,
   ],
   exports: [
     // 3. Exportamos BullModule para que el "Mesero" en otros módulos pueda inyectar trabajos
     BullModule,
-  ]
+  ],
+  providers: [ScraperProcessor],
 })
 export class QueueModule { }

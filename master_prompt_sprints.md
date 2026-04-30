@@ -97,4 +97,4 @@ Presenta las fases una por una. **DETENTE y espera mi confirmación** (ej: "List
 1. **Pitch de Entrevista:** ¿Cómo cuento esto en una entrevista para sonar como un Junior que "ya sabe de qué habla"?
 2. **Pregunta de Refuerzo:** Hazme una pregunta sencilla para confirmar que el concepto se quedó grabado.
 
-**¿Entendido, Mentor? Empecemos con la FASE 1 para el Sprint 11.**
+**¿Entendido, Mentor? Empecemos con la FASE 1 para el Sprint 12.**
