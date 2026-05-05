@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { RedditService } from './reddit.service';
@@ -8,7 +8,7 @@ import { QueueModule } from 'src/queue/queue.module';
   imports: [
     HttpModule,
     ConfigModule,
-    QueueModule
+    forwardRef(() => QueueModule),
   ],
   providers: [RedditService],
   exports: [RedditService],

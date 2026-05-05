@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { YoutubeModule } from './youtube/youtube.module';
 import { RedditModule } from './reddit/reddit.module';
 import { QueueModule } from './queue/queue.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { QueueModule } from './queue/queue.module';
     UsersModule,
     YoutubeModule,
     RedditModule,
-    QueueModule
+    QueueModule,
+    AiModule,
   ],
   controllers: [],
   providers: [],
