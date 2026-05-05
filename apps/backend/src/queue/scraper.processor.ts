@@ -1,8 +1,9 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 // Ojo: verifica que la ruta de tu RedditService coincida
 import { RedditService } from '../reddit/reddit.service';
+
 
 // 1. Decorador que convierte esta clase en un Processor y la suscribe a la cola 'scrape-queue'
 @Processor('scrape-queue')
@@ -10,7 +11,9 @@ export class ScraperProcessor extends WorkerHost {
   private readonly logger = new Logger(ScraperProcessor.name);
 
   // 2. Inyección de dependencias: Traemos la "receta" de Reddit
-  constructor(private readonly redditService: RedditService) {
+  constructor(
+    @Inject(forwardRef(() => RedditService))
+    private readonly redditService: RedditService) {
     super();
   }
 

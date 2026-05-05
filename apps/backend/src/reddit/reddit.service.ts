@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { SCRAPER_QUEUE } from 'src/queue/queue.module';
+import { SCRAPER_QUEUE } from 'src/queue/queue.constants';
 
 @Injectable()
 export class RedditService {
