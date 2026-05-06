@@ -318,3 +318,27 @@ Y con las burbujas simulando sus físicas en tu pantalla, hemos dominado la inte
 Si el día de mañana el CEO te pide que el gráfico tenga el doble de burbujas, y un compañero Junior te sugiere usar `data.map(item => <circle />)` directamente en el `return` de React en lugar de D3... **¿Qué argumento técnico de "Performance" (Rendimiento) usarías para decirle que es una pésima idea?**
 
 ¡Dime tu respuesta y damos por concluido el Sprint 19! Has hecho un trabajo espectacular hoy.
+
+---
+
+## 🧑‍💻 Junior (Usuario)
+le respondería apelando al separation of concerns; y a usar el servicio ya que se tiene donde se genera los mapas; una duda: aún el back end y front end no están conectados, cierto?
+
+## 🧙‍♂️ Mentor Senior (Cierre de Sprint)
+¡Excelente respuesta! El "Separation of Concerns" (Separación de Responsabilidades) es clave en arquitectura. Y si te presionan en la entrevista sobre el **Performance**, añádele la frase letal: *"Si usamos `.map` en React, obligaremos a calcular miles de nodos en el **Virtual DOM** 60 veces por segundo, lo que congelará la pestaña. Al aislar a D3, evitamos por completo el Virtual DOM de React y actualizamos el DOM real directamente"*.
+
+**Sobre tu duda de la conexión Front-Back:**
+¡Estás en lo correcto! Ahorita mismo nuestro `MarketMap` está viviendo en aislamiento con `MOCK_DATA` falso. 
+Si bien en el **Sprint 17** ya construimos tu cliente de API (TanStack Query) y en tu backend ya tenemos a Ollama y Prisma listos, en este módulo visual el objetivo era solo dominar la arquitectura UI. El "gran enchufado" donde los datos reales de la IA fluirán a través de React Query hacia tu D3 Map ocurrirá de forma natural cuando integremos todas las piezas.
+
+**¡Con esto cerramos oficialmente el Sprint 19!** 🏆
+Has sobrevivido a la integración de React con D3.js, uno de los dolores de cabeza más famosos en el frontend moderno.
+
+Haz tu commit para guardar esta victoria:
+```bash
+git add .
+git commit -m "feat(ui): implement d3js cluster map isolation pattern"
+git push
+```
+
+**Cuando estés listo para proteger tu aplicación a nivel Edge, avísame para iniciar el Sprint 20 (Auth Middleware). ¡Gran trabajo hoy!**
