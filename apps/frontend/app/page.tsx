@@ -1,4 +1,5 @@
 import NeedFeed from "../components/NeedFeed";
+import MarketMap from "../components/MarketMap";
 
 export default function Home() {
   return (
@@ -12,6 +13,14 @@ export default function Home() {
             Escuchando las necesidades del mercado en tiempo real.
           </p>
         </div>
+
+        {/* Sección del Mapa de Clusters */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-slate-100 mb-6 flex items-center gap-2">
+            🗺️ Mapa de Nichos (D3.js)
+          </h2>
+          <MarketMap />
+        </section>
         <NeedFeed />
       </div>
     </main>
