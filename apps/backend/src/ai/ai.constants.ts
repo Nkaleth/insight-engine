@@ -1,1 +1,2 @@
 export const OLLAMA_CLIENT = 'OLLAMA_CLIENT';
+export const MAX_CONCURRENT_INFERENCES = 4;
