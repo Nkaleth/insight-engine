@@ -1,5 +1,10 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { EmbeddingsService } from './embeddings.service';
+import pLimit from 'p-limit';
+import { MAX_CONCURRENT_INFERENCES } from './ai.constants';
+
+// 4️⃣ Inicializa la función limitadora pasándole tu constante
+const limitInference = pLimit(MAX_CONCURRENT_INFERENCES);
 
 @Controller('ai')
 export class AiController {
@@ -15,7 +20,9 @@ export class AiController {
     @Body('text') text: string, // 4️⃣ ¿Qué tipo de dato es un texto? (Pista: el decorador está en la línea 1)
   ) {
     // 5️⃣ Llama al método de tu servicio que genera el arreglo de números
-    const vector = await this.embeddingsService.generateEmbedding(text);
+    const vector = await limitInference(
+      () => this.embeddingsService.generateEmbedding(text)
+    );
 
     return {
       message: 'Embedding generado con éxito',
