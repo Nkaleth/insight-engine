@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedditService } from './reddit.service';
 import { NarrativeAuditorService } from '../ai/auditor.logic';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export interface PainPoint {
   title: string;
@@ -43,20 +45,33 @@ export class RedditAnalysisService {
     private readonly auditorService: NarrativeAuditorService,
   ) {}
 
-  async analyzeSubreddit(subreddit: string, limit: number): Promise<AnalysisResult> {
-    this.logger.log(`Iniciando análisis completo de r/${subreddit} (${limit} posts)`);
+  async analyzeSubreddit(input: string, limit: number): Promise<AnalysisResult> {
+    this.logger.log(`Iniciando análisis para: ${input}`);
 
-    // 1. Scrapear los posts más calientes del subreddit
-    const rawPosts = await this.redditService.fetchSubredditHot(subreddit, limit);
+    const isDirectUrl = input.startsWith('http');
+    let rawPosts = [];
+    let subredditName = input;
 
-    // 2. Tomar los primeros 2 posts más relevantes para análisis con IA
-    //    Filtramos: Solo posts con texto largo (>50 chars) y con al menos 10 comentarios.
-    //    (Limitamos a 2 posts para la demo en vivo).
-    const postsToAnalyze = rawPosts
-      .map((p: any) => p.data)
-      .filter((p: any) => p.selftext && p.selftext.length > 50)
-      .filter((p: any) => p.num_comments >= 10) // <-- ¡Filtro de Calidad!
-      .slice(0, 2);
+    if (isDirectUrl) {
+      // 1.a Si es URL directa, traemos el único post
+      const post = await this.redditService.fetchPostByUrl(input);
+      rawPosts = post; // fetchPostByUrl devuelve un array con 1 elemento
+      subredditName = post[0].data.subreddit; // extraemos el nombre real del subreddit
+    } else {
+      // 1.b Si es un nombre de subreddit, scrapeamos el /hot
+      rawPosts = await this.redditService.fetchSubredditHot(input, limit);
+    }
+
+    // 2. Tomar los posts más relevantes para análisis con IA
+    let postsToAnalyze = rawPosts.map((p: any) => p.data);
+    
+    // Si NO es URL directa, aplicamos los filtros de calidad
+    if (!isDirectUrl) {
+      postsToAnalyze = postsToAnalyze
+        .filter((p: any) => p.selftext && p.selftext.length > 50)
+        .filter((p: any) => p.num_comments >= 10)
+        .slice(0, 2);
+    }
 
     this.logger.log(`Enviando ${postsToAnalyze.length} posts al Narrative Auditor...`);
 
@@ -66,7 +81,7 @@ export class RedditAnalysisService {
     for (const post of postsToAnalyze) {
       try {
         const result = await this.auditorService.analyzeNarrative({
-          communityName: subreddit,
+          communityName: subredditName,
           title: post.title,
           comments: post.selftext.slice(0, 1000), // máximo 1000 chars por post
         });
@@ -92,16 +107,53 @@ export class RedditAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
-    // 5. Generar clusters para el MarketMap agrupando por frustrationScore
-    const clusters = this.buildClusters(analysisResults, subreddit);
+    // 5. Generar clusters para el MarketMap
+    const clusters = this.buildClusters(analysisResults, subredditName);
 
-    return {
-      subreddit,
+    const finalResult = {
+      subreddit: subredditName,
+      inputUrl: isDirectUrl ? input : `https://reddit.com/r/${subredditName}`,
       analyzedAt: new Date().toISOString(),
       totalPosts: rawPosts.length,
       painPoints,
       clusters,
     };
+
+    // 6. Exportar reporte Markdown
+    await this.exportToMarkdown(finalResult);
+
+    return finalResult;
+  }
+
+  private async exportToMarkdown(result: any) {
+    try {
+      const reportsDir = path.join(process.cwd(), 'reports');
+      // Crear carpeta si no existe
+      await fs.mkdir(reportsDir, { recursive: true });
+
+      const safeName = result.subreddit.replace(/[^a-zA-Z0-9]/g, '_');
+      const fileName = `reporte-${safeName}-${Date.now()}.md`;
+      const filePath = path.join(reportsDir, fileName);
+
+      let mdContent = `# Insight Engine Report: r/${result.subreddit}\n`;
+      mdContent += `**Date:** ${new Date(result.analyzedAt).toLocaleString()}\n`;
+      mdContent += `**Source URL:** [Link](${result.inputUrl})\n`;
+      mdContent += `**Total Posts Scraped:** ${result.totalPosts}\n\n`;
+      mdContent += `## Market Pain Points\n\n`;
+
+      result.painPoints.forEach((pp, idx) => {
+        mdContent += `### ${idx + 1}. ${pp.title}\n`;
+        mdContent += `- **Frustration Score:** ${pp.score}/10\n`;
+        mdContent += `- **Main Pain Point:** ${pp.mainPainPoint}\n`;
+        mdContent += `- **Business Opportunity:** ${pp.opportunity}\n`;
+        mdContent += `- **Source:** [Reddit Post](${pp.sourceUrl})\n\n`;
+      });
+
+      await fs.writeFile(filePath, mdContent, 'utf-8');
+      this.logger.log(`Reporte Markdown guardado en: ${filePath}`);
+    } catch (err) {
+      this.logger.error(`Error guardando reporte Markdown: ${err.message}`);
+    }
   }
 
   /**
