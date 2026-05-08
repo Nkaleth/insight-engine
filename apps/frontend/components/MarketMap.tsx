@@ -2,83 +2,79 @@
 
 import { useEffect, useRef } from "react";
 import * as d3 from "d3";
+import { ClusterNode, ClusterLink } from "../hooks/useAnalysis";
 
-// Paso 2: Datos de prueba (Nodos y Enlaces)
-const MOCK_DATA = {
-  nodes: [
-    { id: "1", name: "Automatización", group: 1, radius: 20 },
-    { id: "2", name: "SEO Local", group: 2, radius: 15 },
-    { id: "3", name: "Agentes IA", group: 1, radius: 30 },
-  ],
-  links: [
-    { source: "1", target: "3", value: 2 },
-    { source: "2", target: "3", value: 1 },
-  ],
-};
+interface MarketMapProps {
+  nodes?: ClusterNode[];
+  links?: ClusterLink[];
+}
 
-export default function MarketMap() {
-  // Paso 1: El escudo protector
-  const svgRef = useRef(null); // <- HUECO 1: Hook de React para crear referencias mutables
+export default function MarketMap({ nodes = [], links = [] }: MarketMapProps) {
+  const svgRef = useRef(null);
 
   useEffect(() => {
-    // Si la referencia no tiene un elemento HTML asignado aún, cancelamos
-    if (!svgRef.current) return; // <- HUECO 2: Propiedad del ref que contiene el elemento DOM actual
+    if (!svgRef.current || nodes.length === 0) return;
 
     const width = 800;
     const height = 600;
 
-    // Seleccionamos el SVG usando D3 y le damos dimensiones
     const svg = d3
       .select(svgRef.current)
       .attr("width", width)
       .attr("height", height);
 
-    // Limpieza de re-renders
     svg.selectAll("*").remove();
 
-    // Paso 3: El Motor Físico (Force Simulation)
-    // Clonamos los datos porque D3 mutará estos objetos agregándoles coordenadas (x, y)
-    const nodes = MOCK_DATA.nodes.map(
-      (d) => ({ ...d }) as d3.SimulationNodeDatum & typeof d,
-    ); // <- HUECO 4: Propiedad del objeto MOCK_DATA que contiene los nodos
-    const links = MOCK_DATA.links.map((d) => ({ ...d })); // <- HUECO 5: Propiedad del objeto MOCK_DATA que contiene los enlaces
+    // Clonamos datos para D3
+    const d3Nodes = nodes.map(d => ({ ...d })) as any[];
+    const d3Links = links.map(d => ({ ...d })) as any[];
 
-    // Creamos la simulación de fuerzas
     const simulation = d3
-      .forceSimulation(nodes) // <- HUECO 6: Método de d3 para crear una simulación (pista: forceSimulation)
+      .forceSimulation(d3Nodes)
       .force(
         "link",
-        d3
-          .forceLink(links)
-          .id((d: any) => d.id)
-          .distance(100),
+        d3.forceLink(d3Links).id((d: any) => d.id).distance(120)
       )
-      .force("charge", d3.forceManyBody().strength(-300)) // Repulsión magnética entre nodos
-      .force("center", d3.forceCenter(width / 2, height / 2)); // Gravedad hacia el centro
+      .force("charge", d3.forceManyBody().strength(-400))
+      .force("center", d3.forceCenter(width / 2, height / 2));
 
-    // Paso 4: Dibujando las líneas (Enlaces)
     const link = svg
       .append("g")
       .selectAll("line")
-      .data(links)
+      .data(d3Links)
       .enter()
       .append("line")
       .attr("stroke", "#475569")
-      .attr("stroke-width", (d) => Math.sqrt(d.value));
+      .attr("stroke-width", (d) => Math.max(1, Math.sqrt(d.value)));
 
-    // Paso 4: Dibujando los círculos (Nodos)
     const node = svg
       .append("g")
       .selectAll("circle")
-      .data(nodes)
+      .data(d3Nodes)
       .enter()
       .append("circle")
       .attr("r", (d) => d.radius)
-      .attr("fill", (d) => (d.group === 1 ? "#3b82f6" : "#10b981"));
+      .attr("fill", (d) => d.group === 0 ? "#8b5cf6" : d.group === 1 ? "#ef4444" : d.group === 2 ? "#eab308" : "#3b82f6")
+      .call(d3.drag<SVGCircleElement, any>()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended)
+      );
 
-    // Cada vez que la simulación avanza un "tick" (milisegundo), actualizamos las posiciones
+    // Añadir etiquetas a los nodos
+    const label = svg
+      .append("g")
+      .selectAll("text")
+      .data(d3Nodes)
+      .enter()
+      .append("text")
+      .text((d) => d.name)
+      .attr("font-size", (d) => d.group === 0 ? "16px" : "12px")
+      .attr("fill", "#e2e8f0")
+      .attr("text-anchor", "middle")
+      .attr("dy", (d) => d.radius + 15);
+
     simulation.on("tick", () => {
-      // <- HUECO 7: Evento de la simulación (pista: tick)
       link
         .attr("x1", (d: any) => d.source.x)
         .attr("y1", (d: any) => d.source.y)
@@ -86,14 +82,38 @@ export default function MarketMap() {
         .attr("y2", (d: any) => d.target.y);
 
       node.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y);
+      label.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y);
     });
-  }, []);
+
+    // Funciones para arrastrar nodos
+    function dragstarted(event: any) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    }
+    function dragged(event: any) {
+      event.subject.fx = event.x;
+      event.subject.fy = event.y;
+    }
+    function dragended(event: any) {
+      if (!event.active) simulation.alphaTarget(0);
+      event.subject.fx = null;
+      event.subject.fy = null;
+    }
+
+  }, [nodes, links]);
+
+  if (!nodes || nodes.length === 0) {
+    return (
+      <div className="w-full h-[400px] bg-slate-900/50 rounded-xl border border-slate-800 flex items-center justify-center">
+        <p className="text-slate-500">El mapa se generará tras el análisis</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-2xl flex justify-center">
-      {/* Entregamos el lienzo a D3 */}
-      <svg ref={svgRef} className="w-full h-[600px]"></svg>{" "}
-      {/* <- HUECO 3: Variable que creaste en el Hueco 1 */}
+    <div className="w-full bg-slate-900 rounded-xl border border-slate-800 p-4 shadow-2xl overflow-hidden">
+      <svg ref={svgRef} className="w-full h-[600px]"></svg>
     </div>
   );
 }

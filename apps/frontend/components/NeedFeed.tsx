@@ -1,52 +1,32 @@
 "use client";
 
-import { useAnalyzeText } from "../hooks/useAnalysis";
-import { AlertCircle, Activity, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
+import { PainPoint } from "../hooks/useAnalysis";
 
-export default function NeedFeed() {
-  // 1. Instanciamos el hook que maneja la conexión
-  const { mutate, data, isPending, isError } = useAnalyzeText();
+interface NeedFeedProps {
+  painPoints?: PainPoint[];
+  isLoading?: boolean;
+}
 
-  // 2. UI Defensiva: Estado de Carga
-  if (isPending) {
+export default function NeedFeed({ painPoints = [], isLoading = false }: NeedFeedProps) {
+  if (isLoading) {
     return (
-      <div className="p-4 bg-gray-800 rounded-xl flex items-center gap-3 animate-pulse">
-        <Activity className="text-blue-500" />
-        <p className="text-gray-400">Analizando el mercado...</p>
+      <div className="p-8 text-center bg-gray-800/50 rounded-xl border border-gray-700 animate-pulse">
+        <p className="text-blue-400">Analizando el mercado con IA... Esto puede tardar unos segundos.</p>
       </div>
     );
   }
 
-  // 3. UI Defensiva: Estado de Error
-  if (isError) {
+  if (painPoints.length === 0) {
     return (
-      <div className="p-4 bg-red-900/20 border border-red-500 rounded-xl flex items-center gap-3">
-        <AlertCircle className="text-red-500" />
-        <p className="text-red-200">Error al conectar con la IA.</p>
-      </div>
-    );
-  }
-
-  // 4. UI Defensiva: Estado Vacío (Aún no hay datos)
-  if (!data) {
-    return (
-      <div className="p-6 border border-dashed border-gray-700 rounded-xl text-center">
-        <p className="text-gray-500 mb-4">
-          Ingresa texto para descubrir necesidades.
+      <div className="p-8 text-center bg-gray-800/30 rounded-xl border border-gray-700">
+        <p className="text-gray-500">
+          Esperando análisis. Los puntos de dolor aparecerán aquí.
         </p>
-        <button
-          onClick={() =>
-            mutate("La gente se queja mucho de que Notion es lento en móviles.")
-          }
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-        >
-          Probar Análisis Falso
-        </button>
       </div>
     );
   }
 
-  // 5. Renderizado Exitoso
   return (
     <div className="space-y-4">
       <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -54,15 +34,37 @@ export default function NeedFeed() {
         Puntos de Dolor Detectados
       </h3>
 
-      {/* 6. Iteramos sobre los painPoints */}
-      {data.painPoints.map((painPoint, index) => (
-        <div
-          key={index}
-          className="p-4 bg-gray-800 border border-gray-700 rounded-xl"
-        >
-          <p className="text-gray-200">{painPoint}</p>
-        </div>
-      ))}
+      <div className="grid gap-4">
+        {painPoints.map((point, index) => (
+          <div
+            key={index}
+            className="p-5 bg-gray-800 border border-gray-700 rounded-xl hover:border-gray-500 transition-colors"
+          >
+            <div className="flex justify-between items-start mb-2">
+              <h4 className="font-semibold text-lg text-gray-100">{point.mainPainPoint || "Problema detectado"}</h4>
+              <span className={`px-2 py-1 text-xs font-bold rounded-full ${point.score >= 7 ? 'bg-red-900/50 text-red-400 border border-red-800' : point.score >= 4 ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-800' : 'bg-blue-900/50 text-blue-400 border border-blue-800'}`}>
+                Score: {point.score}/10
+              </span>
+            </div>
+            
+            <p className="text-gray-300 mb-4 italic">"{point.title}"</p>
+            
+            <div className="bg-gray-900 p-3 rounded-lg border border-gray-700">
+              <p className="text-sm text-green-400 font-medium mb-1">💡 Oportunidad de Negocio:</p>
+              <p className="text-sm text-gray-400">{point.opportunity}</p>
+            </div>
+            
+            <a 
+              href={point.sourceUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-block mt-3 text-xs text-blue-500 hover:text-blue-400 underline"
+            >
+              Ver post original en Reddit
+            </a>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

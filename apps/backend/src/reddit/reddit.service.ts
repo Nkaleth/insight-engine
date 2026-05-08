@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -50,8 +50,11 @@ export class RedditService {
 
       return posts;
     } catch (error) {
+      if (error.response && error.response.status === 404) {
+        throw new NotFoundException(`El subreddit '${subreddit}' no existe o es privado. Recuerda que los subreddits no llevan espacios (ej: 'pazmental' en vez de 'paz mental').`);
+      }
       this.logger.error(`Error al extraer datos de Reddit: ${error.message}`);
-      throw error;
+      throw new InternalServerErrorException('Error conectando con Reddit.');
     }
   }
 }

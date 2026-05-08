@@ -9,8 +9,12 @@ interface LoginCredentials {
   password: string;
 }
 
+// El TransformInterceptor del backend envuelve la respuesta en { statusCode, data }
 interface LoginResponse {
-  access_token: string;
+  statusCode: number;
+  data: {
+    access_token: string;
+  };
 }
 
 export function useLogin() {
@@ -22,7 +26,8 @@ export function useLogin() {
         "/auth/login",
         credentials
       );
-      return response.data;
+      // response.data es el envelope: { statusCode, data: { access_token } }
+      return response.data.data;
     },
     onSuccess: (data) => {
       // Guardamos el JWT en una cookie accesible por el proxy (middleware)
