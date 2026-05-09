@@ -50,3 +50,36 @@ export function useRedditAnalysis() {
     },
   });
 }
+
+// ── YouTube ──────────────────────────────────────────────────────────────────
+
+export interface YoutubeAnalysisResult {
+  videoId: string;
+  videoUrl: string;
+  analyzedAt: string;
+  totalComments: number;
+  csvPath: string;
+  painPoints: PainPoint[];
+  clusters: {
+    nodes: ClusterNode[];
+    links: ClusterLink[];
+  };
+}
+
+export function useYoutubeAnalysis() {
+  return useMutation({
+    mutationFn: async ({
+      videoUrl,
+      maxComments = 200,
+    }: {
+      videoUrl: string;
+      maxComments?: number;
+    }) => {
+      const response = await apiClient.post<BackendResponse<YoutubeAnalysisResult>>(
+        '/youtube/analyze',
+        { videoUrl, maxComments },
+      );
+      return response.data.data;
+    },
+  });
+}
