@@ -128,6 +128,7 @@ export function useYoutubeContentIdeas() {
 // ── Reports History ────────────────────────────────────────────────────────
 
 export interface ReportSummary {
+  source: 'youtube' | 'reddit';
   videoId: string;
   type: 'pain-points' | 'content-ideas';
   fileName: string;
@@ -142,6 +143,23 @@ export function useReports() {
       const response = await apiClient.get<BackendResponse<ReportSummary[]>>('/youtube/reports');
       return response.data.data;
     },
-    staleTime: 30_000, // refrescar cada 30s
+    staleTime: 30_000,
   });
 }
+
+export function useDeleteReport() {
+  return useMutation({
+    mutationFn: async ({ type, fileName }: { type: 'pain-points' | 'content-ideas'; fileName: string }) => {
+      await apiClient.delete(`/youtube/reports/${type}/${fileName}`);
+    },
+  });
+}
+
+export function useDeleteCsv() {
+  return useMutation({
+    mutationFn: async ({ source, csvFileName }: { source: 'youtube' | 'reddit'; csvFileName: string }) => {
+      await apiClient.delete(`/youtube/reports/csv/${source}/${csvFileName}`);
+    },
+  });
+}
+

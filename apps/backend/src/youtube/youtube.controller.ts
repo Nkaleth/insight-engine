@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Res, NotFoundException, HttpCode } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { YoutubeAnalysisService } from './youtube-analysis.service';
 import { ReportsService } from './reports.service';
@@ -53,5 +53,38 @@ export class YoutubeController {
       throw new NotFoundException(`Reporte no encontrado: ${fileName}`);
     }
   }
-}
 
+  @ApiOperation({ summary: 'Eliminar un reporte .md' })
+  @Delete('reports/:type/:fileName')
+  @HttpCode(204)
+  async deleteReport(
+    @Param('type') type: string,
+    @Param('fileName') fileName: string,
+  ) {
+    if (type !== 'pain-points' && type !== 'content-ideas') {
+      throw new NotFoundException('Tipo de reporte inválido');
+    }
+    try {
+      await this.reportsService.deleteReport(type as 'pain-points' | 'content-ideas', fileName);
+    } catch {
+      throw new NotFoundException(`Reporte no encontrado: ${fileName}`);
+    }
+  }
+
+  @ApiOperation({ summary: 'Eliminar un CSV de comentarios' })
+  @Delete('reports/csv/:source/:csvFileName')
+  @HttpCode(204)
+  async deleteCsv(
+    @Param('source') source: string,
+    @Param('csvFileName') csvFileName: string,
+  ) {
+    if (source !== 'youtube' && source !== 'reddit') {
+      throw new NotFoundException('Fuente inválida');
+    }
+    try {
+      await this.reportsService.deleteCsv(csvFileName, source as 'youtube' | 'reddit');
+    } catch {
+      throw new NotFoundException(`CSV no encontrado: ${csvFileName}`);
+    }
+  }
+}
