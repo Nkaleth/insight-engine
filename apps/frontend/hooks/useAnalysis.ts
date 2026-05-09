@@ -55,6 +55,7 @@ export function useRedditAnalysis() {
 
 export interface YoutubeAnalysisResult {
   videoId: string;
+  videoTitle: string;
   videoUrl: string;
   analyzedAt: string;
   totalComments: number;
@@ -90,6 +91,7 @@ export function useYoutubeAnalysis() {
 
 export interface YoutubeContentIdeasResult {
   videoId: string;
+  videoTitle: string;
   videoUrl: string;
   analyzedAt: string;
   totalComments: number;
@@ -130,6 +132,7 @@ export function useYoutubeContentIdeas() {
 export interface ReportSummary {
   source: 'youtube' | 'reddit';
   videoId: string;
+  videoTitle: string;
   type: 'pain-points' | 'content-ideas';
   fileName: string;
   csvFile: string | null;

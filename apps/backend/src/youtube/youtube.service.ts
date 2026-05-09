@@ -129,4 +129,9 @@ export class YoutubeService {
       throw err;
     }
   }
+
+  /** Obtiene el título de un video desde la API de YouTube. */
+  async getVideoTitle(videoId: string): Promise<string> {
+    return this.youtubeProvider.getVideoTitle(videoId);
+  }
 }

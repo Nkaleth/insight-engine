@@ -6,6 +6,7 @@ import { YoutubeComment } from './youtube.service';
 export interface ReportSummary {
   source: 'youtube' | 'reddit';
   videoId: string;         // For reddit: subreddit name
+  videoTitle: string;      // Human-readable title
   type: 'pain-points' | 'content-ideas';
   fileName: string;
   csvFile: string | null;
@@ -217,9 +218,18 @@ export class ReportsService {
             if (found) csvFile = found;
           } catch { /* no CSV */ }
 
+          // Parse videoTitle from MD header if available
+          let videoTitle = key;
+          try {
+            const mdContent = await fs.readFile(path.join(dir, f), 'utf-8');
+            const titleMatch = mdContent.match(/\*\*T[ií]tulo:\*\*\s*([^\r\n]+)/);
+            if (titleMatch?.[1]) videoTitle = titleMatch[1].trim();
+          } catch { /* use key fallback */ }
+
           results.push({
             source: isReddit ? 'reddit' : 'youtube',
             videoId: key,
+            videoTitle,
             type,
             fileName: f,
             csvFile,

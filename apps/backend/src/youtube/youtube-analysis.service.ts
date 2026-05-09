@@ -10,6 +10,7 @@ import {
 
 export interface YoutubeAnalysisResult {
   videoId: string;
+  videoTitle: string;
   videoUrl: string;
   analyzedAt: string;
   totalComments: number;
@@ -25,6 +26,7 @@ export interface YoutubeAnalysisResult {
 
 export interface YoutubeContentIdeasResult {
   videoId: string;
+  videoTitle: string;
   videoUrl: string;
   analyzedAt: string;
   totalComments: number;
@@ -87,6 +89,7 @@ export class YoutubeAnalysisService {
     this.logger.log(`Iniciando análisis Pain Points para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
+    const videoTitle = await this.youtubeService.getVideoTitle(videoId);
     const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
 
     const topComments = [...comments]
@@ -126,18 +129,11 @@ export class YoutubeAnalysisService {
     const clusters = this.buildClusters(analysisResults, videoId);
     const analyzedAt = new Date().toISOString();
 
-    const reportPath = await this.exportPainPointsMarkdown({
-      videoId, videoUrl, analyzedAt,
-      totalComments: comments.length,
-      csvPath, csvReused, reportPath: '', painPoints, clusters,
-    });
+    const partial = { videoId, videoTitle, videoUrl, analyzedAt,
+      totalComments: comments.length, csvPath, csvReused, reportPath: '', painPoints, clusters };
+    const reportPath = await this.exportPainPointsMarkdown(partial);
 
-    return {
-      videoId, videoUrl, analyzedAt,
-      totalComments: comments.length,
-      csvPath, csvReused, reportPath,
-      painPoints, clusters,
-    };
+    return { ...partial, reportPath };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -150,6 +146,7 @@ export class YoutubeAnalysisService {
     this.logger.log(`Iniciando análisis Content Ideas para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
+    const videoTitle = await this.youtubeService.getVideoTitle(videoId);
     const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
 
     const COMMENTS_FOR_CONTENT_IDEAS = 20;
@@ -166,7 +163,7 @@ export class YoutubeAnalysisService {
     let auditorResult: ContentAuditorResult;
     try {
       auditorResult = await this.auditorService.analyzeContentOpportunity({
-        videoTitle: `YouTube Video: ${videoId}`,
+        videoTitle: videoTitle,
         comments: concatenatedComments,
       });
     } catch (err) {
@@ -175,24 +172,16 @@ export class YoutubeAnalysisService {
     }
 
     const analyzedAt = new Date().toISOString();
-
-    const reportPath = await this.exportContentIdeasMarkdown({
-      videoId, videoUrl, analyzedAt,
-      totalComments: comments.length,
-      csvPath, csvReused, reportPath: '',
-      audienceSentiment: auditorResult.audienceSentiment,
-      unmetNeed: auditorResult.unmetNeed,
-      contentIdeas: auditorResult.contentIdeas,
-    });
-
-    return {
-      videoId, videoUrl, analyzedAt,
-      totalComments: comments.length,
-      csvPath, csvReused, reportPath,
+    const partial = {
+      videoId, videoTitle, videoUrl, analyzedAt,
+      totalComments: comments.length, csvPath, csvReused, reportPath: '',
       audienceSentiment: auditorResult.audienceSentiment,
       unmetNeed: auditorResult.unmetNeed,
       contentIdeas: auditorResult.contentIdeas,
     };
+    const reportPath = await this.exportContentIdeasMarkdown(partial);
+
+    return { ...partial, reportPath };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -201,6 +190,7 @@ export class YoutubeAnalysisService {
   private async exportPainPointsMarkdown(result: YoutubeAnalysisResult): Promise<string> {
     try {
       let md = `# Insight Engine — Pain Points Report\n\n`;
+      md += `**Título:** ${result.videoTitle}\n`;
       md += `**Video ID:** \`${result.videoId}\`\n`;
       md += `**Video URL:** [Ver en YouTube](${result.videoUrl})\n`;
       md += `**Fecha:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;
@@ -231,6 +221,7 @@ export class YoutubeAnalysisService {
   private async exportContentIdeasMarkdown(result: YoutubeContentIdeasResult): Promise<string> {
     try {
       let md = `# Insight Engine — Content Ideas Report\n\n`;
+      md += `**Título:** ${result.videoTitle}\n`;
       md += `**Video ID:** \`${result.videoId}\`\n`;
       md += `**Video URL:** [Ver en YouTube](${result.videoUrl})\n`;
       md += `**Fecha:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;

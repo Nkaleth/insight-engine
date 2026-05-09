@@ -247,12 +247,10 @@ export default function Home() {
         )}
 
         {/* ── Reports History ── */}
-        {!isReddit && (
-          <>
-            <hr className="border-gray-700/50" />
-            <ReportsHistory />
-          </>
-        )}
+        <>
+          <hr className="border-gray-700/50" />
+          <ReportsHistory source={activeTab} />
+        </>
       </div>
     </main>
   );
