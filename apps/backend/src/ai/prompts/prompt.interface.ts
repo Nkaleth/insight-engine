@@ -3,3 +3,8 @@ export interface AnalysisContext {
   title: string;
   comments: string;
 }
+
+export interface ContentAnalysisContext {
+  videoTitle: string;
+  comments: string;
+}

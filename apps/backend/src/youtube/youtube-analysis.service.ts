@@ -1,13 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { YoutubeService, YoutubeComment } from './youtube.service';
-import { NarrativeAuditorService } from '../ai/auditor.logic';
+import { NarrativeAuditorService, ContentAuditorResult } from '../ai/auditor.logic';
+import { ReportsService } from './reports.service';
 import {
   PainPoint,
   ClusterNode,
   ClusterLink,
 } from '../reddit/reddit-analysis.service';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 
 export interface YoutubeAnalysisResult {
   videoId: string;
@@ -15,11 +14,32 @@ export interface YoutubeAnalysisResult {
   analyzedAt: string;
   totalComments: number;
   csvPath: string;
+  csvReused: boolean;
+  reportPath: string;
   painPoints: PainPoint[];
   clusters: {
     nodes: ClusterNode[];
     links: ClusterLink[];
   };
+}
+
+export interface YoutubeContentIdeasResult {
+  videoId: string;
+  videoUrl: string;
+  analyzedAt: string;
+  totalComments: number;
+  csvPath: string;
+  csvReused: boolean;
+  reportPath: string;
+  audienceSentiment: string;
+  unmetNeed: string;
+  contentIdeas: {
+    opportunityScore: number;
+    demandEvidence: string;
+    titleIdea: string;
+    format: string;
+    hook: string;
+  }[];
 }
 
 @Injectable()
@@ -32,47 +52,57 @@ export class YoutubeAnalysisService {
   constructor(
     private readonly youtubeService: YoutubeService,
     private readonly auditorService: NarrativeAuditorService,
+    private readonly reportsService: ReportsService,
   ) {}
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helper: Obtener comentarios (reutiliza CSV si existe, si no llama a la API)
+  // ─────────────────────────────────────────────────────────────────────────
+  private async getComments(
+    videoId: string,
+    videoUrl: string,
+    maxComments: number,
+  ): Promise<{ comments: YoutubeComment[]; csvPath: string; csvReused: boolean }> {
+    const existing = await this.reportsService.findExistingCsv(videoId);
+
+    if (existing) {
+      const comments = await this.reportsService.loadCommentsFromCsv(existing);
+      this.logger.log(`CSV reutilizado (${comments.length} comentarios) de: ${existing}`);
+      return { comments, csvPath: existing, csvReused: true };
+    }
+
+    this.logger.log(`Sin CSV previo — llamando a la API de YouTube para: ${videoUrl}`);
+    const comments = await this.youtubeService.fetchComments(videoId, maxComments);
+    const csvPath = await this.reportsService.writeCsv(comments, videoId);
+    return { comments, csvPath, csvReused: false };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Pain Points analysis
+  // ─────────────────────────────────────────────────────────────────────────
   async analyzeVideo(
     videoUrl: string,
     maxComments: number = 200,
   ): Promise<YoutubeAnalysisResult> {
-    this.logger.log(`Iniciando análisis de YouTube para: ${videoUrl}`);
+    this.logger.log(`Iniciando análisis Pain Points para: ${videoUrl}`);
 
-    // 1. Extraer videoId desde la URL
     const videoId = this.youtubeService.extractVideoId(videoUrl);
+    const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
 
-    // 2. Scraping de comentarios con paginación
-    const comments = await this.youtubeService.fetchComments(
-      videoId,
-      maxComments,
-    );
-    this.logger.log(`Total comentarios extraídos: ${comments.length}`);
-
-    // 3. Exportar TODOS los comentarios a CSV
-    const csvPath = await this.youtubeService.exportToCsv(comments, videoId);
-
-    // 4. Seleccionar los top N comentarios por likeCount para el análisis IA
     const topComments = [...comments]
       .sort((a, b) => b.likeCount - a.likeCount)
       .slice(0, this.COMMENTS_FOR_AI);
 
-    this.logger.log(
-      `Enviando ${topComments.length} comentarios top al Narrative Auditor...`,
-    );
+    this.logger.log(`Enviando ${topComments.length} comentarios top al Narrative Auditor...`);
 
-    // 5. Analizar con Ollama — secuencial para no saturar VRAM
     const analysisResults: any[] = [];
-
     for (const comment of topComments) {
       try {
         const result = await this.auditorService.analyzeNarrative({
           communityName: `YouTube Video: ${videoId}`,
           title: `Comentario de ${comment.author} (${comment.likeCount} likes)`,
-          comments: comment.text.slice(0, 1000), // máximo 1000 chars por comentario
+          comments: comment.text.slice(0, 1000),
         });
-
         analysisResults.push({
           title: `${comment.author}: "${comment.text.slice(0, 60)}..."`,
           score: result.frustrationScore,
@@ -81,13 +111,10 @@ export class YoutubeAnalysisService {
           sourceUrl: videoUrl,
         });
       } catch (err) {
-        this.logger.warn(
-          `Falló análisis del comentario de ${comment.author}: ${err.message}`,
-        );
+        this.logger.warn(`Falló análisis del comentario de ${comment.author}: ${err.message}`);
       }
     }
 
-    // 6. Construir PainPoints para el NeedFeed
     const painPoints: PainPoint[] = analysisResults.map((r) => ({
       title: r.title,
       score: r.score,
@@ -96,65 +123,149 @@ export class YoutubeAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
-    // 7. Generar clusters para el MarketMap (mismo algoritmo que Reddit)
     const clusters = this.buildClusters(analysisResults, videoId);
+    const analyzedAt = new Date().toISOString();
 
-    const finalResult: YoutubeAnalysisResult = {
-      videoId,
-      videoUrl,
-      analyzedAt: new Date().toISOString(),
+    const reportPath = await this.exportPainPointsMarkdown({
+      videoId, videoUrl, analyzedAt,
       totalComments: comments.length,
-      csvPath,
-      painPoints,
-      clusters,
+      csvPath, csvReused, reportPath: '', painPoints, clusters,
+    });
+
+    return {
+      videoId, videoUrl, analyzedAt,
+      totalComments: comments.length,
+      csvPath, csvReused, reportPath,
+      painPoints, clusters,
     };
-
-    // 8. Exportar reporte Markdown
-    await this.exportToMarkdown(finalResult);
-
-    return finalResult;
   }
 
-  private async exportToMarkdown(result: YoutubeAnalysisResult): Promise<void> {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Content Ideas analysis
+  // ─────────────────────────────────────────────────────────────────────────
+  async analyzeContentIdeas(
+    videoUrl: string,
+    maxComments: number = 200,
+  ): Promise<YoutubeContentIdeasResult> {
+    this.logger.log(`Iniciando análisis Content Ideas para: ${videoUrl}`);
+
+    const videoId = this.youtubeService.extractVideoId(videoUrl);
+    const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
+
+    const COMMENTS_FOR_CONTENT_IDEAS = 20;
+    const topComments = [...comments]
+      .sort((a, b) => b.likeCount - a.likeCount)
+      .slice(0, COMMENTS_FOR_CONTENT_IDEAS);
+
+    this.logger.log(`Enviando bloque de ${topComments.length} comentarios al Narrative Auditor...`);
+
+    const concatenatedComments = topComments
+      .map((c) => `- ${c.author} (${c.likeCount} likes): ${c.text}`)
+      .join('\n');
+
+    let auditorResult: ContentAuditorResult;
     try {
-      const reportsDir = path.join(process.cwd(), 'reports');
-      await fs.mkdir(reportsDir, { recursive: true });
+      auditorResult = await this.auditorService.analyzeContentOpportunity({
+        videoTitle: `YouTube Video: ${videoId}`,
+        comments: concatenatedComments,
+      });
+    } catch (err) {
+      this.logger.error(`Falló análisis de ideas de contenido: ${err.message}`);
+      throw err;
+    }
 
-      const fileName = `youtube-${result.videoId}-${Date.now()}.md`;
-      const filePath = path.join(reportsDir, fileName);
+    const analyzedAt = new Date().toISOString();
 
-      let mdContent = `# Insight Engine Report: YouTube\n\n`;
-      mdContent += `**Video ID:** \`${result.videoId}\`\n`;
-      mdContent += `**Video URL:** [Ver en YouTube](${result.videoUrl})\n`;
-      mdContent += `**Fecha de Análisis:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;
-      mdContent += `**Total de Comentarios Extraídos:** ${result.totalComments}\n`;
-      mdContent += `**CSV Generado:** \`${path.basename(result.csvPath)}\`\n\n`;
-      mdContent += `## Market Pain Points\n\n`;
+    const reportPath = await this.exportContentIdeasMarkdown({
+      videoId, videoUrl, analyzedAt,
+      totalComments: comments.length,
+      csvPath, csvReused, reportPath: '',
+      audienceSentiment: auditorResult.audienceSentiment,
+      unmetNeed: auditorResult.unmetNeed,
+      contentIdeas: auditorResult.contentIdeas,
+    });
+
+    return {
+      videoId, videoUrl, analyzedAt,
+      totalComments: comments.length,
+      csvPath, csvReused, reportPath,
+      audienceSentiment: auditorResult.audienceSentiment,
+      unmetNeed: auditorResult.unmetNeed,
+      contentIdeas: auditorResult.contentIdeas,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Markdown exporters
+  // ─────────────────────────────────────────────────────────────────────────
+  private async exportPainPointsMarkdown(result: YoutubeAnalysisResult): Promise<string> {
+    try {
+      let md = `# Insight Engine — Pain Points Report\n\n`;
+      md += `**Video ID:** \`${result.videoId}\`\n`;
+      md += `**Video URL:** [Ver en YouTube](${result.videoUrl})\n`;
+      md += `**Fecha:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;
+      md += `**Comentarios Extraídos:** ${result.totalComments}\n`;
+      md += `**CSV:** \`${result.csvPath.split('/').slice(-1)[0]}\`${result.csvReused ? ' *(reutilizado)*' : ''}\n\n`;
+      md += `## Market Pain Points\n\n`;
 
       if (result.painPoints.length === 0) {
-        mdContent += `> No se encontraron pain points suficientes en los comentarios analizados.\n`;
+        md += `> No se encontraron pain points suficientes.\n`;
       } else {
         result.painPoints.forEach((pp, idx) => {
-          mdContent += `### ${idx + 1}. ${pp.title}\n`;
-          mdContent += `- **Frustration Score:** ${pp.score}/10\n`;
-          mdContent += `- **Main Pain Point:** ${pp.mainPainPoint}\n`;
-          mdContent += `- **Business Opportunity:** ${pp.opportunity}\n`;
-          mdContent += `- **Source:** [YouTube Video](${pp.sourceUrl})\n\n`;
+          md += `### ${idx + 1}. ${pp.title}\n`;
+          md += `- **Frustration Score:** ${pp.score}/10\n`;
+          md += `- **Main Pain Point:** ${pp.mainPainPoint}\n`;
+          md += `- **Business Opportunity:** ${pp.opportunity}\n`;
+          md += `- **Source:** [YouTube Video](${pp.sourceUrl})\n\n`;
         });
       }
 
-      await fs.writeFile(filePath, mdContent, 'utf-8');
-      this.logger.log(`✅ Reporte Markdown guardado: ${filePath}`);
+      const fileName = `youtube-${result.videoId}-${Date.now()}.md`;
+      return this.reportsService.writeMarkdown(md, 'pain-points', fileName);
     } catch (err) {
-      this.logger.error(`Error guardando reporte Markdown: ${err.message}`);
+      this.logger.error(`Error guardando reporte Pain Points MD: ${err.message}`);
+      return '';
     }
   }
 
-  /**
-   * Construye nodos y links para D3.js agrupando pain points por nivel de frustración.
-   * Idéntico al algoritmo de Reddit para compatibilidad con el MarketMap del frontend.
-   * Alta frustración (>=7) = grupo 1, Media (>=4) = grupo 2, Baja = grupo 3
-   */
+  private async exportContentIdeasMarkdown(result: YoutubeContentIdeasResult): Promise<string> {
+    try {
+      let md = `# Insight Engine — Content Ideas Report\n\n`;
+      md += `**Video ID:** \`${result.videoId}\`\n`;
+      md += `**Video URL:** [Ver en YouTube](${result.videoUrl})\n`;
+      md += `**Fecha:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;
+      md += `**Comentarios Analizados:** ${result.totalComments}\n`;
+      md += `**CSV:** \`${result.csvPath.split('/').slice(-1)[0]}\`${result.csvReused ? ' *(reutilizado)*' : ''}\n\n`;
+
+      md += `## Análisis de Audiencia\n\n`;
+      md += `**Sentimiento General:**\n> ${result.audienceSentiment}\n\n`;
+      md += `**Necesidad No Cubierta:**\n> ${result.unmetNeed}\n\n`;
+
+      md += `## Ideas de Contenido (ordenadas por Opportunity Score)\n\n`;
+      if (result.contentIdeas.length === 0) {
+        md += `> Sin demanda suficiente en los comentarios para generar ideas.\n`;
+      } else {
+        result.contentIdeas.forEach((idea, idx) => {
+          const bar = '█'.repeat(idea.opportunityScore) + '░'.repeat(10 - idea.opportunityScore);
+          md += `### ${idx + 1}. "${idea.titleIdea}"\n`;
+          md += `- **Opportunity Score:** ${idea.opportunityScore}/10 \`${bar}\`\n`;
+          md += `- **Formato:** ${idea.format}\n`;
+          md += `- **Evidencia de Demanda:** *${idea.demandEvidence}*\n`;
+          md += `- **Hook:** *"${idea.hook}"*\n\n`;
+        });
+      }
+
+      const fileName = `youtube-${result.videoId}-${Date.now()}.md`;
+      return this.reportsService.writeMarkdown(md, 'content-ideas', fileName);
+    } catch (err) {
+      this.logger.error(`Error guardando reporte Content Ideas MD: ${err.message}`);
+      return '';
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // D3.js cluster builder (sin cambios)
+  // ─────────────────────────────────────────────────────────────────────────
   private buildClusters(
     results: any[],
     videoId: string,
@@ -162,29 +273,17 @@ export class YoutubeAnalysisService {
     const nodes: ClusterNode[] = [];
     const links: ClusterLink[] = [];
 
-    // Nodo central: el video analizado
-    nodes.push({
-      id: 'center',
-      name: `YT: ${videoId}`,
-      group: 0,
-      radius: 28,
-    });
+    nodes.push({ id: 'center', name: `YT: ${videoId}`, group: 0, radius: 28 });
 
     results.forEach((result, index) => {
       if (!result) return;
       const id = `node-${index}`;
       const group = result.score >= 7 ? 1 : result.score >= 4 ? 2 : 3;
       const radius = 8 + result.score * 1.5;
-
-      const label =
-        result.mainPainPoint?.slice(0, 30) || result.title.slice(0, 30);
+      const label = result.mainPainPoint?.slice(0, 30) || result.title.slice(0, 30);
 
       nodes.push({ id, name: label, group, radius });
-      links.push({
-        source: 'center',
-        target: id,
-        value: Math.ceil(result.score / 3),
-      });
+      links.push({ source: 'center', target: id, value: Math.ceil(result.score / 3) });
     });
 
     return { nodes, links };
