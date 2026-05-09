@@ -15,17 +15,15 @@ export class YoutubeProvider {
 
   async searchVideos(query: string, maxResults: number = 10) {
     try {
-      const response = await this.youtubeClient.search.list({ // ⬅️ LLENA EL HUECO 1: ¿Qué método de la API hace listas/búsquedas?
+      const response = await this.youtubeClient.search.list({
         part: ['snippet'],
         q: query,
         maxResults,
         type: ['video'],
         order: 'relevance',
       });
-
       return response.data.items || [];
     } catch (error) {
-      // ⬅️ LLENA EL HUECO 2: ¿Qué clase de error nativo de NestJS deberíamos lanzar aquí si algo falla? (Pista: HTTPException o BadGatewayException)
       throw new BadGatewayException(
         `Error al buscar en YouTube: ${(error as Error).message}`
       );
@@ -34,23 +32,34 @@ export class YoutubeProvider {
 
   async getVideoComments(videoId: string, maxResults: number = 100, pageToken?: string) {
     try {
-      const response = await this.youtubeClient.commentThreads.list({ // ⬅️ LLENA EL HUECO 3: ¿Qué método lista los hilos de comentarios?
+      const response = await this.youtubeClient.commentThreads.list({
         part: ['snippet'],
         videoId: videoId,
         maxResults,
-        pageToken, // Si existe, trae la siguiente página de comentarios
+        pageToken,
         textFormat: 'plainText',
       });
-
       return {
         comments: response.data.items || [],
-        nextPageToken: response.data.nextPageToken, // Vital para la paginación asíncrona
+        nextPageToken: response.data.nextPageToken,
       };
     } catch (error) {
-      throw new BadGatewayException( // ⬅️ LLENA EL HUECO 4 (Usa el mismo del Hueco 2)
+      throw new BadGatewayException(
         `Error al extraer comentarios del video ${videoId}: ${(error as Error).message}`
       );
     }
   }
-}
 
+  /** Obtiene el título del video desde la API de YouTube */
+  async getVideoTitle(videoId: string): Promise<string> {
+    try {
+      const response = await this.youtubeClient.videos.list({
+        part: ['snippet'],
+        id: [videoId],
+      });
+      return response.data.items?.[0]?.snippet?.title ?? videoId;
+    } catch {
+      return videoId; // fallback graceful al ID
+    }
+  }
+}

@@ -1,14 +1,26 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { Ollama } from 'ollama';
 import { OLLAMA_CLIENT } from './ai.constants';
-import { generateSociologicalPrompt } from './prompts/prompts.library';
-import { AnalysisContext } from './prompts/prompt.interface';
+import { generateSociologicalPrompt, generateContentOpportunityPrompt } from './prompts/prompts.library';
+import { AnalysisContext, ContentAnalysisContext } from './prompts/prompt.interface';
 
 // 1. Interfaz que define el contrato de nuestro JSON esperado
 export interface AuditorResult {
   frustrationScore: number;
   mainPainPoint: string;
   businessOpportunity: string;
+}
+
+export interface ContentAuditorResult {
+  audienceSentiment: string;
+  unmetNeed: string;
+  contentIdeas: {
+    opportunityScore: number;
+    demandEvidence: string;
+    titleIdea: string;
+    format: string;
+    hook: string;
+  }[];
 }
 
 @Injectable()
@@ -54,6 +66,34 @@ export class NarrativeAuditorService {
     } catch (error) {
       this.logger.error(`Error durante la auditoría narrativa: ${error.message}`, error.stack);
       throw new Error('Fallo en el Narrative Auditor al procesar el texto.');
+    }
+  }
+
+  async analyzeContentOpportunity(context: ContentAnalysisContext): Promise<ContentAuditorResult> {
+    this.logger.log(`Iniciando análisis de ideas de contenido para: ${context.videoTitle}`);
+
+    const prompt = generateContentOpportunityPrompt(context);
+
+    try {
+      const response = await this.ollamaClient.chat({
+        model: 'gemma4:e4b',
+        messages: [{ role: 'user', content: prompt }],
+        format: 'json',
+        options: {
+          temperature: 0.4, // Un poco más de creatividad para idear contenido
+        },
+      });
+
+      const rawText = response.message.content;
+      const jsonString = rawText.trim().startsWith('{') ? rawText : '{' + rawText;
+
+      const parsedResult: ContentAuditorResult = JSON.parse(jsonString);
+
+      this.logger.log('Análisis de ideas de contenido completado exitosamente.');
+      return parsedResult;
+    } catch (error) {
+      this.logger.error(`Error durante el análisis de contenido: ${error.message}`, error.stack);
+      throw new Error('Fallo en el Narrative Auditor al procesar ideas de contenido.');
     }
   }
 }

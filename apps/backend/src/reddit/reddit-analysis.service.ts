@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RedditService } from './reddit.service';
 import { NarrativeAuditorService } from '../ai/auditor.logic';
-import * as fs from 'fs/promises';
+import { ReportsService } from '../youtube/reports.service';
 import * as path from 'path';
 
 export interface PainPoint {
@@ -27,8 +27,12 @@ export interface ClusterLink {
 
 export interface AnalysisResult {
   subreddit: string;
+  inputUrl: string;
   analyzedAt: string;
   totalPosts: number;
+  csvPath: string;
+  csvReused: boolean;
+  reportPath: string;
   painPoints: PainPoint[];
   clusters: {
     nodes: ClusterNode[];
@@ -43,30 +47,53 @@ export class RedditAnalysisService {
   constructor(
     private readonly redditService: RedditService,
     private readonly auditorService: NarrativeAuditorService,
+    private readonly reportsService: ReportsService,
   ) {}
 
   async analyzeSubreddit(input: string, limit: number): Promise<AnalysisResult> {
     this.logger.log(`Iniciando análisis para: ${input}`);
 
     const isDirectUrl = input.startsWith('http');
-    let rawPosts = [];
     let subredditName = input;
+    let postsToAnalyze: any[] = [];
+    let totalPosts = 0;
+    let csvPath = '';
+    let csvReused = false;
 
     if (isDirectUrl) {
-      // 1.a Si es URL directa, traemos el único post
-      const post = await this.redditService.fetchPostByUrl(input);
-      rawPosts = post; // fetchPostByUrl devuelve un array con 1 elemento
-      subredditName = post[0].data.subreddit; // extraemos el nombre real del subreddit
+      // URL directa — sin caché (única petición, no repetible)
+      const raw = await this.redditService.fetchPostByUrl(input);
+      subredditName = raw[0].data.subreddit;
+      postsToAnalyze = raw.map((p: any) => p.data);
+      totalPosts = postsToAnalyze.length;
     } else {
-      // 1.b Si es un nombre de subreddit, scrapeamos el /hot
-      rawPosts = await this.redditService.fetchSubredditHot(input, limit);
+      // Subreddit — intentar reutilizar CSV primero
+      const existingCsv = await this.reportsService.findExistingRedditCsv(subredditName);
+
+      if (existingCsv) {
+        postsToAnalyze = await this.reportsService.loadRedditPostsFromCsv(existingCsv);
+        totalPosts = postsToAnalyze.length;
+        csvPath = existingCsv;
+        csvReused = true;
+        this.logger.log(`CSV Reddit reutilizado (${totalPosts} posts)`);
+      } else {
+        const rawPosts = await this.redditService.fetchSubredditHot(subredditName, limit);
+        const allData = rawPosts.map((p: any) => p.data);
+        totalPosts = allData.length;
+
+        // Guardar CSV con TODOS los posts
+        csvPath = await this.reportsService.writeRedditCsv(allData, subredditName);
+
+        // Aplicar filtros de calidad para el análisis IA
+        postsToAnalyze = allData
+          .filter((p: any) => p.selftext && p.selftext.length > 50)
+          .filter((p: any) => p.num_comments >= 10)
+          .slice(0, 2);
+      }
     }
 
-    // 2. Tomar los posts más relevantes para análisis con IA
-    let postsToAnalyze = rawPosts.map((p: any) => p.data);
-    
-    // Si NO es URL directa, aplicamos los filtros de calidad
-    if (!isDirectUrl) {
+    // Filtros de calidad si venía del CSV (mantener coherencia)
+    if (csvReused) {
       postsToAnalyze = postsToAnalyze
         .filter((p: any) => p.selftext && p.selftext.length > 50)
         .filter((p: any) => p.num_comments >= 10)
@@ -75,17 +102,15 @@ export class RedditAnalysisService {
 
     this.logger.log(`Enviando ${postsToAnalyze.length} posts al Narrative Auditor...`);
 
-    // 3. Analizar cada post con el NarrativeAuditor (Ollama) secuencialmente
-    // Evitamos Promise.all para no saturar la VRAM del modelo local con peticiones concurrentes
+    // Analizar con Ollama — secuencial para no saturar VRAM
     const analysisResults: any[] = [];
     for (const post of postsToAnalyze) {
       try {
         const result = await this.auditorService.analyzeNarrative({
           communityName: subredditName,
           title: post.title,
-          comments: post.selftext.slice(0, 1000), // máximo 1000 chars por post
+          comments: post.selftext.slice(0, 1000),
         });
-        
         analysisResults.push({
           title: post.title,
           score: result.frustrationScore,
@@ -98,7 +123,6 @@ export class RedditAnalysisService {
       }
     }
 
-    // 4. Construir los PainPoints para el NeedFeed
     const painPoints: PainPoint[] = analysisResults.map((r) => ({
       title: r.title,
       score: r.score,
@@ -107,78 +131,78 @@ export class RedditAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
-    // 5. Generar clusters para el MarketMap
     const clusters = this.buildClusters(analysisResults, subredditName);
+    const analyzedAt = new Date().toISOString();
+    const inputUrl = isDirectUrl ? input : `https://reddit.com/r/${subredditName}`;
 
-    const finalResult = {
+    const reportPath = await this.exportToMarkdown({
       subreddit: subredditName,
-      inputUrl: isDirectUrl ? input : `https://reddit.com/r/${subredditName}`,
-      analyzedAt: new Date().toISOString(),
-      totalPosts: rawPosts.length,
+      inputUrl,
+      analyzedAt,
+      totalPosts,
+      csvPath,
+      csvReused,
+      reportPath: '',
+      painPoints,
+      clusters,
+    });
+
+    return {
+      subreddit: subredditName,
+      inputUrl,
+      analyzedAt,
+      totalPosts,
+      csvPath,
+      csvReused,
+      reportPath,
       painPoints,
       clusters,
     };
-
-    // 6. Exportar reporte Markdown
-    await this.exportToMarkdown(finalResult);
-
-    return finalResult;
   }
 
-  private async exportToMarkdown(result: any) {
+  private async exportToMarkdown(result: AnalysisResult): Promise<string> {
     try {
-      const reportsDir = path.join(process.cwd(), 'reports');
-      // Crear carpeta si no existe
-      await fs.mkdir(reportsDir, { recursive: true });
-
       const safeName = result.subreddit.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `reporte-${safeName}-${Date.now()}.md`;
-      const filePath = path.join(reportsDir, fileName);
-
-      let mdContent = `# Insight Engine Report: r/${result.subreddit}\n`;
-      mdContent += `**Date:** ${new Date(result.analyzedAt).toLocaleString()}\n`;
-      mdContent += `**Source URL:** [Link](${result.inputUrl})\n`;
-      mdContent += `**Total Posts Scraped:** ${result.totalPosts}\n\n`;
-      mdContent += `## Market Pain Points\n\n`;
+      let md = `# Insight Engine Report: r/${result.subreddit}\n\n`;
+      md += `**Date:** ${new Date(result.analyzedAt).toLocaleString('es-MX')}\n`;
+      md += `**Source URL:** [Link](${result.inputUrl})\n`;
+      md += `**Total Posts Scraped:** ${result.totalPosts}\n`;
+      if (result.csvPath) {
+        md += `**CSV:** \`${path.basename(result.csvPath)}\`${result.csvReused ? ' *(reutilizado)*' : ''}\n`;
+      }
+      md += `\n## Market Pain Points\n\n`;
 
       result.painPoints.forEach((pp, idx) => {
-        mdContent += `### ${idx + 1}. ${pp.title}\n`;
-        mdContent += `- **Frustration Score:** ${pp.score}/10\n`;
-        mdContent += `- **Main Pain Point:** ${pp.mainPainPoint}\n`;
-        mdContent += `- **Business Opportunity:** ${pp.opportunity}\n`;
-        mdContent += `- **Source:** [Reddit Post](${pp.sourceUrl})\n\n`;
+        const bar = '█'.repeat(pp.score) + '░'.repeat(10 - pp.score);
+        md += `### ${idx + 1}. ${pp.title}\n`;
+        md += `- **Frustration Score:** ${pp.score}/10 \`${bar}\`\n`;
+        md += `- **Main Pain Point:** ${pp.mainPainPoint}\n`;
+        md += `- **Business Opportunity:** ${pp.opportunity}\n`;
+        md += `- **Source:** [Reddit Post](${pp.sourceUrl})\n\n`;
       });
 
-      await fs.writeFile(filePath, mdContent, 'utf-8');
-      this.logger.log(`Reporte Markdown guardado en: ${filePath}`);
+      const fileName = `reporte-${safeName}-${Date.now()}.md`;
+      return this.reportsService.writeMarkdown(md, 'pain-points', fileName);
     } catch (err) {
       this.logger.error(`Error guardando reporte Markdown: ${err.message}`);
+      return '';
     }
   }
 
-  /**
-   * Construye nodos y links para D3.js agrupando pain points por nivel de frustración.
-   * Alta frustración (>6) = grupo 1 (azul), Media = grupo 2 (verde), Baja = grupo 3 (gris)
-   */
   private buildClusters(
     results: any[],
     subreddit: string,
   ): { nodes: ClusterNode[]; links: ClusterLink[] } {
     const nodes: ClusterNode[] = [];
     const links: ClusterLink[] = [];
-
-    // Nodo central: el subreddit mismo
     nodes.push({ id: 'center', name: `r/${subreddit}`, group: 0, radius: 28 });
 
     results.forEach((result, index) => {
       if (!result) return;
       const id = `node-${index}`;
       const group = result.score >= 7 ? 1 : result.score >= 4 ? 2 : 3;
-      const radius = 8 + result.score * 1.5; // radio proporcional a la frustración
-
-      // Truncar el título para el label del nodo
+      const radius = 8 + result.score * 1.5;
       const label = result.mainPainPoint?.slice(0, 30) || result.title.slice(0, 30);
-
       nodes.push({ id, name: label, group, radius });
       links.push({ source: 'center', target: id, value: Math.ceil(result.score / 3) });
     });
