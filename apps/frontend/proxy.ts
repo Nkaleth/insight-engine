@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 2. Extraer la cookie llamada "access_token"
   // (Pista: es un método para "obtener" en inglés)
   const token = request.cookies.get("access_token")?.value;

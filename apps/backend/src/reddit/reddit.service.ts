@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -50,8 +50,47 @@ export class RedditService {
 
       return posts;
     } catch (error) {
+      if (error.response && error.response.status === 404) {
+        throw new NotFoundException(`El subreddit '${subreddit}' no existe o es privado. Recuerda que los subreddits no llevan espacios (ej: 'pazmental' en vez de 'paz mental').`);
+      }
       this.logger.error(`Error al extraer datos de Reddit: ${error.message}`);
-      throw error;
+    }
+  }
+
+  async fetchPostByUrl(postUrl: string): Promise<any> {
+    // Si la URL ya termina en .json, la usamos. Si no, se lo añadimos
+    // Reddit suele añadir parámetros de tracking (?utm_source=...), así que mejor parseamos la URL.
+    const urlObj = new URL(postUrl);
+    urlObj.search = ''; // Limpiamos parámetros como ?context=3
+    let cleanUrl = urlObj.toString();
+    if (cleanUrl.endsWith('/')) {
+      cleanUrl = cleanUrl.slice(0, -1);
+    }
+    if (!cleanUrl.endsWith('.json')) {
+      cleanUrl += '.json';
+    }
+
+    this.logger.log(`Extrayendo post directo de: ${cleanUrl}`);
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(cleanUrl, {
+          headers: { 'User-Agent': this.userAgent }
+        })
+      );
+
+      // Cuando pides un post directo con .json, Reddit devuelve un arreglo:
+      // [0] = El post original
+      // [1] = Los comentarios
+      // Nosotros solo necesitamos el post original estructurado igual que fetchSubredditHot
+      const postData = response.data[0].data.children;
+      return postData;
+    } catch (error) {
+      if (error.response && error.response.status === 404) {
+        throw new NotFoundException(`El post '${postUrl}' no fue encontrado.`);
+      }
+      this.logger.error(`Error al extraer post directo de Reddit: ${error.message}`);
+      throw new InternalServerErrorException('Error conectando con Reddit.');
     }
   }
 }
