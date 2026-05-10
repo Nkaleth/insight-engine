@@ -18,6 +18,22 @@ model RawNeed {
   createdAt DateTime                    @default(now())
 }
 
+/// Comentarios de YouTube y posts de Reddit vectorizados para análisis semántico.
+model Comment {
+  id         String                      @id @default(uuid())
+  sourceType String                      // 'youtube' | 'reddit'
+  sourceId   String                      // videoId o subreddit name
+  externalId String?                     // YouTube commentId o Reddit permalink
+  author     String?
+  content    String
+  likeCount  Int                         @default(0)
+  embedding  Unsupported("vector(768)")?
+  createdAt  DateTime                    @default(now())
+
+  @@unique([sourceId, externalId])
+  @@index([sourceId])
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique

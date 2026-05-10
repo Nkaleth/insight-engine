@@ -7,28 +7,40 @@ export class EmbeddingsService {
   private readonly logger = new Logger(EmbeddingsService.name);
 
   constructor(
-    // 1️⃣ Inyecta el token correcto usando el decorador de NestJS
-    @Inject(OLLAMA_CLIENT) // Pista: Usamos el token exportado en ai.constants.ts
-    private readonly ollamaClient: Ollama, // 2️⃣ ¿Cuál es el tipo de esta variable según nuestra importación de arriba?
+    @Inject(OLLAMA_CLIENT)
+    private readonly ollamaClient: Ollama,
   ) { }
 
-  /**
-   * Transforma texto en coordenadas matemáticas
-   */
-  async generateEmbedding(text: string): Promise<number[]> { // 3️⃣ ¿Qué devuelve un embedding? (tipo de dato primitivo)
+  /** Convierte un texto a un vector de 768 dimensiones. */
+  async generateEmbedding(text: string): Promise<number[]> {
     try {
       this.logger.debug(`Vectorizando texto de ${text.length} caracteres...`);
-
-      // 4️⃣ Llama al método de embed de la librería Ollama
       const response = await this.ollamaClient.embed({
-        model: 'nomic-embed-text', // 5️⃣ Pon el modelo exacto que descargamos en la Fase 1
+        model: 'nomic-embed-text',
         input: text,
       });
-
-      // 6️⃣ Retorna el arreglo de números que viene en la respuesta
-      return response.embeddings[0]; // Pista: Revisa qué devuelve el SDK de Ollama
+      return response.embeddings[0];
     } catch (error) {
       this.logger.error('Error al generar embedding', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Convierte un batch de textos en vectores en UNA SOLA llamada a Ollama.
+   * Más eficiente que llamar generateEmbedding N veces.
+   * @param texts Array de strings (máx 50 por batch recomendado)
+   */
+  async generateEmbeddingBatch(texts: string[]): Promise<number[][]> {
+    try {
+      this.logger.debug(`Vectorizando batch de ${texts.length} textos...`);
+      const response = await this.ollamaClient.embed({
+        model: 'nomic-embed-text',
+        input: texts,
+      });
+      return response.embeddings;
+    } catch (error) {
+      this.logger.error(`Error al vectorizar batch de ${texts.length} textos`, error);
       throw error;
     }
   }
