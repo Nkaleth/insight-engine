@@ -79,12 +79,26 @@ export class RedditService {
         })
       );
 
-      // Cuando pides un post directo con .json, Reddit devuelve un arreglo:
       // [0] = El post original
       // [1] = Los comentarios
-      // Nosotros solo necesitamos el post original estructurado igual que fetchSubredditHot
-      const postData = response.data[0].data.children;
-      return postData;
+      const postNode = response.data[0]?.data?.children[0]?.data || {};
+      const comments = response.data[1]?.data?.children
+        .filter((c: any) => c.kind === 't1')
+        .map((c: any) => ({
+          data: {
+            ...c.data,
+            title: `Comentario de ${c.data.author}`,
+            selftext: c.data.body,
+            subreddit: postNode.subreddit || 'unknown',
+            num_comments: 0,
+          }
+        })) || [];
+        
+      if (comments.length === 0) {
+        // Fallback al post si no hay comentarios
+        return response.data[0].data.children;
+      }
+      return comments;
     } catch (error) {
       if (error.response && error.response.status === 404) {
         throw new NotFoundException(`El post '${postUrl}' no fue encontrado.`);

@@ -73,16 +73,20 @@ export class RedditAnalysisService {
 
     if (isDirectUrl) {
       const raw = await this.redditService.fetchPostByUrl(input);
-      subredditName = raw[0].data.subreddit;
+      subredditName = raw[0]?.data?.subreddit || 'unknown';
       posts = raw.map((p: any) => p.data);
       
+      // Guardar CSV también para URLs directas
+      csvPath = await this.reportsService.writeRedditCsv(posts, subredditName);
+      csvReused = false;
+
       await this.vectorStore.saveMany(
         posts.map((p) => ({ externalId: p.name || p.id, content: `${p.title}\n${p.selftext || ''}`, author: p.author, likeCount: p.score || p.ups })),
         input,
         'reddit',
       );
       const representative = await this.vectorStore.pickRepresentative(input, 15);
-      return { representative, subredditName, totalPosts: posts.length, csvPath: '', csvReused: false, dbReused: false, isDirectUrl };
+      return { representative, subredditName, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl };
     }
 
     if (await this.vectorStore.hasEmbeddings(subredditName)) {
