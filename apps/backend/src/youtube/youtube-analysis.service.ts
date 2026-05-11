@@ -71,6 +71,7 @@ export class YoutubeAnalysisService {
     videoId: string,
     videoUrl: string,
     maxComments: number,
+    forceRefresh: boolean = false,
   ): Promise<{
     representative: StoredComment[];
     totalComments: number;
@@ -78,8 +79,21 @@ export class YoutubeAnalysisService {
     csvReused: boolean;
     dbReused: boolean;
   }> {
+    // ── Purga Manual (Force Refresh) ────────────────────────
+    if (forceRefresh) {
+      this.logger.log(`🧹 Force Refresh activado para [${videoId}]. Purgando caché...`);
+      await this.vectorStore.deleteSource(videoId);
+      
+      const existingCsv = await this.reportsService.findExistingCsv(videoId);
+      if (existingCsv) {
+        const csvFileName = existingCsv.split('/').pop()!;
+        await this.reportsService.deleteCsv(csvFileName, 'youtube');
+        this.logger.log(`🗑️ CSV eliminado: ${csvFileName}`);
+      }
+    }
+
     // ── Capa 1: DB ──────────────────────────────────────────────────────────
-    if (await this.vectorStore.hasEmbeddings(videoId)) {
+    if (!forceRefresh && await this.vectorStore.hasEmbeddings(videoId)) {
       this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para [${videoId}]`);
       const representative = await this.vectorStore.pickRepresentative(videoId, this.COMMENTS_FOR_AI);
       return { representative, totalComments: representative.length, csvPath: '', csvReused: false, dbReused: true };
@@ -90,7 +104,7 @@ export class YoutubeAnalysisService {
     let csvPath: string;
     let csvReused: boolean;
 
-    const existingCsv = await this.reportsService.findExistingCsv(videoId);
+    const existingCsv = !forceRefresh ? await this.reportsService.findExistingCsv(videoId) : null;
     if (existingCsv) {
       this.logger.log(`✅ Capa 2 (CSV): Reutilizando ${existingCsv}`);
       comments = await this.reportsService.loadCommentsFromCsv(existingCsv);
@@ -119,13 +133,14 @@ export class YoutubeAnalysisService {
   // ─────────────────────────────────────────────────────────────────────────
   async analyzeVideo(
     videoUrl: string,
-    maxComments: number = 200,
+    maxComments: number = 5000,
+    forceRefresh: boolean = false,
   ): Promise<YoutubeAnalysisResult> {
     this.logger.log(`Iniciando análisis Pain Points para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
     const videoTitle = await this.youtubeService.getVideoTitle(videoId);
-    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments);
+    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments, forceRefresh);
 
     this.logger.log(`Enviando ${representative.length} comentarios representativos (MMR) al Narrative Auditor...`);
 
@@ -175,13 +190,14 @@ export class YoutubeAnalysisService {
   // ─────────────────────────────────────────────────────────────────────────
   async analyzeContentIdeas(
     videoUrl: string,
-    maxComments: number = 200,
+    maxComments: number = 5000,
+    forceRefresh: boolean = false,
   ): Promise<YoutubeContentIdeasResult> {
     this.logger.log(`Iniciando análisis Content Ideas para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
     const videoTitle = await this.youtubeService.getVideoTitle(videoId);
-    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments);
+    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments, forceRefresh);
 
     this.logger.log(`Enviando bloque de ${representative.length} comentarios representativos (MMR) al Narrative Auditor...`);
 

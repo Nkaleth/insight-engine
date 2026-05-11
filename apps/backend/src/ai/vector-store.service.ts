@@ -60,6 +60,15 @@ export class VectorStoreService {
     return Number(result[0]?.count ?? 0) > 0;
   }
 
+  /** Elimina todos los vectores asociados a un sourceId */
+  async deleteSource(sourceId: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      DELETE FROM "Comment"
+      WHERE "sourceId" = ${sourceId}
+    `;
+    this.logger.log(`🗑️ Vectores purgados de la DB para [${sourceId}]`);
+  }
+
   // ─── Guardado ─────────────────────────────────────────────────────────────
 
   /**

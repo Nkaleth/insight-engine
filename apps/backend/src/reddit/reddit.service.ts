@@ -143,9 +143,9 @@ export class RedditService {
           this.logger.warn(`No se pudieron extraer comentarios del post ${postUrl}: ${err.message}`);
         }
 
-        // Delay de 500ms para evitar rate limiting de Reddit
+        // Delay de 2000ms para evitar rate limiting de Reddit en búsquedas masivas
         if (i < posts.length - 1) {
-          await this.sleep(1000);
+          await this.sleep(2000);
         }
       }
 

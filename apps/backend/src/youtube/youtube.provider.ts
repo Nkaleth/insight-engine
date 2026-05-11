@@ -43,9 +43,14 @@ export class YoutubeProvider {
         comments: response.data.items || [],
         nextPageToken: response.data.nextPageToken,
       };
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes('quotaExceeded')) {
+        throw new BadGatewayException(
+          `Has alcanzado el límite de cuota de la API de YouTube. La cuota se reinicia a la medianoche, Horario del Pacífico (PT). Por favor, intenta de nuevo mañana.`
+        );
+      }
       throw new BadGatewayException(
-        `Error al extraer comentarios del video ${videoId}: ${(error as Error).message}`
+        `Error al extraer comentarios del video ${videoId}: ${error.message}`
       );
     }
   }

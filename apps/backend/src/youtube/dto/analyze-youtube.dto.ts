@@ -10,14 +10,21 @@ export class AnalyzeYoutubeDto {
   videoUrl: string;
 
   @ApiPropertyOptional({
-    description: 'Número máximo de comentarios a extraer (default: 200)',
+    description: 'Número máximo de comentarios a extraer (default: 5000)',
     minimum: 10,
-    maximum: 500,
-    default: 200,
+    maximum: 10000,
+    default: 5000,
   })
   @IsOptional()
   @IsNumber()
   @Min(10)
-  @Max(500)
+  @Max(10000)
   maxComments?: number;
+
+  @ApiPropertyOptional({
+    description: 'Forzar extracción desde la API, borrando vectores y CSV existentes',
+    default: false,
+  })
+  @IsOptional()
+  forceRefresh?: boolean;
 }

@@ -56,6 +56,7 @@ export class RedditAnalysisService {
   private async getPostsForAnalysis(
     input: string,
     limit: number,
+    forceRefresh: boolean = false,
   ): Promise<{
     representative: StoredComment[];
     subredditName: string;
@@ -101,15 +102,28 @@ export class RedditAnalysisService {
     let csvPath = '';
     let csvReused = false;
 
+    // ── Purga Manual (Force Refresh) ────────────────────────
+    if (forceRefresh) {
+      this.logger.log(`🧹 Force Refresh activado para ${sourceId}. Purgando caché...`);
+      await this.vectorStore.deleteSource(sourceId);
+      
+      const existingCsv = await this.reportsService.findExistingRedditCsv(sourceId);
+      if (existingCsv) {
+        const csvFileName = existingCsv.split('/').pop()!;
+        await this.reportsService.deleteCsv(csvFileName, 'reddit');
+        this.logger.log(`🗑️ CSV eliminado: ${csvFileName}`);
+      }
+    }
+
     // ── Capa 1: DB ──────────────────────────────────────────
-    if (await this.vectorStore.hasEmbeddings(sourceId)) {
+    if (!forceRefresh && await this.vectorStore.hasEmbeddings(sourceId)) {
       this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para ${sourceId}`);
       const representative = await this.vectorStore.pickRepresentative(sourceId, 15);
       return { representative, subredditName: sourceId, totalPosts: representative.length, csvPath: '', csvReused: false, dbReused: true, isDirectUrl, isTopicSearch, topicQuery };
     }
 
     // ── Capa 2: CSV ─────────────────────────────────────────
-    const existingCsv = await this.reportsService.findExistingRedditCsv(sourceId);
+    const existingCsv = !forceRefresh ? await this.reportsService.findExistingRedditCsv(sourceId) : null;
     if (existingCsv) {
       this.logger.log(`✅ Capa 2 (CSV): Reutilizando ${existingCsv}`);
       posts = await this.reportsService.loadRedditPostsFromCsv(existingCsv);
@@ -142,10 +156,11 @@ export class RedditAnalysisService {
     return { representative, subredditName: sourceId, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl, isTopicSearch, topicQuery };
   }
 
-  async analyzeSubreddit(input: string, limit: number): Promise<AnalysisResult> {
-    this.logger.log(`Iniciando análisis para: ${input}`);
+  async analyzeSubreddit(input: string, limit: number, forceRefresh: boolean = false): Promise<AnalysisResult> {
+    this.logger.log(`Iniciando análisis (Reddit) para: ${input}`);
 
-    const { representative, subredditName, totalPosts, csvPath, csvReused, dbReused, isDirectUrl, isTopicSearch, topicQuery } = await this.getPostsForAnalysis(input, limit);
+    const { representative, subredditName, totalPosts, csvPath, csvReused, dbReused, isDirectUrl, isTopicSearch, topicQuery } = 
+      await this.getPostsForAnalysis(input, limit, forceRefresh);
 
     this.logger.log(`Enviando ${representative.length} posts representativos (MMR) al Narrative Auditor...`);
 
