@@ -157,6 +157,9 @@ export class YoutubeAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
+    // Ordenar de mayor a menor dolor
+    painPoints.sort((a, b) => b.score - a.score);
+
     const clusters = this.buildClusters(analysisResults, videoId);
     const analyzedAt = new Date().toISOString();
 

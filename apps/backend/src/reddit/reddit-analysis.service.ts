@@ -64,65 +64,88 @@ export class RedditAnalysisService {
     csvReused: boolean;
     dbReused: boolean;
     isDirectUrl: boolean;
+    isTopicSearch: boolean;
+    topicQuery: string;
   }> {
-    const isDirectUrl = input.startsWith('http');
-    let subredditName = input;
+    let isTopicSearch = false;
+    let isDirectUrl = false;
+    let topicQuery = '';
+
+    if (input.startsWith('http')) {
+      if (input.includes('/search')) {
+        isTopicSearch = true;
+        const urlObj = new URL(input);
+        topicQuery = urlObj.searchParams.get('q') || 'unknown';
+      } else {
+        isDirectUrl = true;
+      }
+    } else if (input.startsWith('topic:')) {
+      isTopicSearch = true;
+      topicQuery = input.replace('topic:', '').trim();
+    } else if (input.includes(' ')) {
+      isTopicSearch = true;
+      topicQuery = input.trim();
+    }
+
+    let sourceId = '';
+    if (isTopicSearch) {
+      sourceId = `topic_${topicQuery.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    } else if (isDirectUrl) {
+      const match = input.match(/comments\/([a-zA-Z0-9]+)/);
+      sourceId = match ? `post_${match[1]}` : `post_${Date.now()}`;
+    } else {
+      sourceId = input;
+    }
+
     let posts: any[] = [];
     let csvPath = '';
     let csvReused = false;
 
-    if (isDirectUrl) {
-      const raw = await this.redditService.fetchPostByUrl(input);
-      subredditName = raw[0]?.data?.subreddit || 'unknown';
-      posts = raw.map((p: any) => p.data);
-      
-      // Guardar CSV también para URLs directas
-      csvPath = await this.reportsService.writeRedditCsv(posts, subredditName);
-      csvReused = false;
-
-      await this.vectorStore.saveMany(
-        posts.map((p) => ({ externalId: p.name || p.id, content: `${p.title}\n${p.selftext || ''}`, author: p.author, likeCount: p.score || p.ups })),
-        input,
-        'reddit',
-      );
-      const representative = await this.vectorStore.pickRepresentative(input, 15);
-      return { representative, subredditName, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl };
+    // ── Capa 1: DB ──────────────────────────────────────────
+    if (await this.vectorStore.hasEmbeddings(sourceId)) {
+      this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para ${sourceId}`);
+      const representative = await this.vectorStore.pickRepresentative(sourceId, 15);
+      return { representative, subredditName: sourceId, totalPosts: representative.length, csvPath: '', csvReused: false, dbReused: true, isDirectUrl, isTopicSearch, topicQuery };
     }
 
-    if (await this.vectorStore.hasEmbeddings(subredditName)) {
-      this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para r/${subredditName}`);
-      const representative = await this.vectorStore.pickRepresentative(subredditName, 15);
-      return { representative, subredditName, totalPosts: representative.length, csvPath: '', csvReused: false, dbReused: true, isDirectUrl };
-    }
-
-    const existingCsv = await this.reportsService.findExistingRedditCsv(subredditName);
+    // ── Capa 2: CSV ─────────────────────────────────────────
+    const existingCsv = await this.reportsService.findExistingRedditCsv(sourceId);
     if (existingCsv) {
       this.logger.log(`✅ Capa 2 (CSV): Reutilizando ${existingCsv}`);
       posts = await this.reportsService.loadRedditPostsFromCsv(existingCsv);
       csvPath = existingCsv;
       csvReused = true;
     } else {
-      this.logger.log(`📱 Capa 3 (API Reddit): Descargando posts de r/${subredditName}`);
-      const rawPosts = await this.redditService.fetchSubredditHot(subredditName, limit);
-      posts = rawPosts.map((p: any) => p.data);
-      csvPath = await this.reportsService.writeRedditCsv(posts, subredditName);
+      // ── Capa 3: API ───────────────────────────────────────
+      this.logger.log(`📱 Capa 3 (API Reddit): Descargando ${sourceId}`);
+      if (isTopicSearch) {
+        const rawPosts = await this.redditService.fetchTopicComments(topicQuery, limit);
+        posts = rawPosts.map((p: any) => p.data);
+      } else if (isDirectUrl) {
+        const raw = await this.redditService.fetchPostByUrl(input);
+        posts = raw.map((p: any) => p.data);
+      } else {
+        const rawPosts = await this.redditService.fetchSubredditHot(input, limit);
+        posts = rawPosts.map((p: any) => p.data);
+      }
+      csvPath = await this.reportsService.writeRedditCsv(posts, sourceId);
       csvReused = false;
     }
 
     await this.vectorStore.saveMany(
       posts.map((p) => ({ externalId: p.name || p.id, content: `${p.title}\n${p.selftext || ''}`, author: p.author, likeCount: p.score || p.ups })),
-      subredditName,
+      sourceId,
       'reddit',
     );
 
-    const representative = await this.vectorStore.pickRepresentative(subredditName, 15);
-    return { representative, subredditName, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl };
+    const representative = await this.vectorStore.pickRepresentative(sourceId, 15);
+    return { representative, subredditName: sourceId, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl, isTopicSearch, topicQuery };
   }
 
   async analyzeSubreddit(input: string, limit: number): Promise<AnalysisResult> {
     this.logger.log(`Iniciando análisis para: ${input}`);
 
-    const { representative, subredditName, totalPosts, csvPath, csvReused, dbReused, isDirectUrl } = await this.getPostsForAnalysis(input, limit);
+    const { representative, subredditName, totalPosts, csvPath, csvReused, dbReused, isDirectUrl, isTopicSearch, topicQuery } = await this.getPostsForAnalysis(input, limit);
 
     this.logger.log(`Enviando ${representative.length} posts representativos (MMR) al Narrative Auditor...`);
 
@@ -155,9 +178,12 @@ export class RedditAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
+    // Ordenar de mayor a menor dolor
+    painPoints.sort((a, b) => b.score - a.score);
+
     const clusters = this.buildClusters(analysisResults, subredditName);
     const analyzedAt = new Date().toISOString();
-    const inputUrl = isDirectUrl ? input : `https://reddit.com/r/${subredditName}`;
+    const inputUrl = isDirectUrl ? input : (isTopicSearch ? `https://reddit.com/search/?q=${encodeURIComponent(topicQuery)}` : `https://reddit.com/r/${subredditName}`);
 
     const reportPath = await this.exportToMarkdown({
       subreddit: subredditName,
