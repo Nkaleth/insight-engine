@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { OllamaFactory } from './ollama.client';
+import { LlamaCppFactory } from './llamacpp.client';
 import { EmbeddingsService } from './embeddings.service';
 import { AiController } from './ai.controller';
 import { NarrativeAuditorService } from './auditor.logic';
@@ -13,6 +14,7 @@ import { PrismaService } from '../common/prisma.service';
   controllers: [AiController],
   providers: [
     OllamaFactory,
+    LlamaCppFactory,
     EmbeddingsService,
     NarrativeAuditorService,
     PrismaService,
@@ -20,6 +22,7 @@ import { PrismaService } from '../common/prisma.service';
   ],
   exports: [
     OllamaFactory,
+    LlamaCppFactory,
     EmbeddingsService,
     NarrativeAuditorService,
     PrismaService,
