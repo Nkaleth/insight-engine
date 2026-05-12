@@ -20,12 +20,12 @@ export default function Home() {
 
   // ── YouTube state ─────────────────────────────────────────────
   const [videoUrl, setVideoUrl] = useState("");
-  const [maxComments, setMaxComments] = useState(200);
   const [youtubeMode, setYoutubeMode] = useState<YoutubeMode>("pain-points");
   const youtubeMutation = useYoutubeAnalysis();
   const youtubeContentIdeasMutation = useYoutubeContentIdeas();
 
   // ── Unified result state ──────────────────────────────────────
+  const [forceRefresh, setForceRefresh] = useState(false);
   const isReddit = activeTab === "reddit";
   const isYoutubePainPoints = !isReddit && youtubeMode === "pain-points";
   const isYoutubeContentIdeas = !isReddit && youtubeMode === "content-ideas";
@@ -38,16 +38,28 @@ export default function Home() {
   const handleRedditSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!subreddit.trim()) return;
-    redditMutation.mutate(subreddit.trim());
+    
+    if (forceRefresh) {
+      const confirmed = window.confirm("⚠️ ¿Estás seguro de forzar la re-extracción?\n\nEsto borrará permanentemente los datos antiguos (Vectores y CSV) de la base de datos y hará nuevas peticiones a la API.");
+      if (!confirmed) return;
+    }
+
+    redditMutation.mutate({ subreddit: subreddit.trim(), forceRefresh });
   };
 
   const handleYoutubeSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!videoUrl.trim()) return;
+
+    if (forceRefresh) {
+      const confirmed = window.confirm("⚠️ ¿Estás seguro de forzar la re-extracción?\n\nEsto borrará permanentemente los datos antiguos (Vectores y CSV) de la base de datos y hará nuevas peticiones a la API.");
+      if (!confirmed) return;
+    }
+
     if (youtubeMode === "pain-points") {
-      youtubeMutation.mutate({ videoUrl: videoUrl.trim(), maxComments });
+      youtubeMutation.mutate({ videoUrl: videoUrl.trim(), forceRefresh });
     } else {
-      youtubeContentIdeasMutation.mutate({ videoUrl: videoUrl.trim(), maxComments });
+      youtubeContentIdeasMutation.mutate({ videoUrl: videoUrl.trim(), forceRefresh });
     }
   };
 
@@ -97,29 +109,43 @@ export default function Home() {
 
         {/* ── Reddit Form ── */}
         {isReddit && (
-          <form onSubmit={handleRedditSearch} className="flex gap-2">
-            <div className="relative flex-1">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500 font-medium">
-                r/
-              </span>
-              <input
-                id="reddit-input"
-                type="text"
-                value={subreddit}
-                onChange={(e) => setSubreddit(e.target.value)}
-                placeholder="startups, solopreneur, SaaS..."
-                className="w-full pl-8 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                disabled={isPending}
-              />
+          <form onSubmit={handleRedditSearch} className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500 font-medium">
+                  r/
+                </span>
+                <input
+                  id="reddit-input"
+                  type="text"
+                  value={subreddit}
+                  onChange={(e) => setSubreddit(e.target.value)}
+                  placeholder="startups, solopreneur, SaaS..."
+                  className="w-full pl-8 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  disabled={isPending}
+                />
+              </div>
+              <button
+                id="reddit-submit"
+                type="submit"
+                disabled={isPending || !subreddit.trim()}
+                className="px-6 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-semibold rounded-xl flex items-center gap-2 transition-colors"
+              >
+                {isPending ? "Analizando..." : <><Search size={18} /> Explorar</>}
+              </button>
             </div>
-            <button
-              id="reddit-submit"
-              type="submit"
-              disabled={isPending || !subreddit.trim()}
-              className="px-6 py-3 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-semibold rounded-xl flex items-center gap-2 transition-colors"
-            >
-              {isPending ? "Analizando..." : <><Search size={18} /> Explorar</>}
-            </button>
+            <div className="flex items-center gap-2 mt-1 pl-1">
+              <input
+                type="checkbox"
+                id="forceRefreshReddit"
+                checked={forceRefresh}
+                onChange={(e) => setForceRefresh(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-600 text-orange-600 focus:ring-orange-600 bg-gray-700"
+              />
+              <label htmlFor="forceRefreshReddit" className="text-sm text-gray-400 select-none cursor-pointer">
+                Forzar extracción desde cero (borra caché existente)
+              </label>
+            </div>
           </form>
         )}
 
@@ -168,24 +194,18 @@ export default function Home() {
                 {isPending ? "Analizando..." : <><Search size={18} /> Analizar</>}
               </button>
             </div>
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-gray-400 whitespace-nowrap">
-                Comentarios a extraer:
-              </label>
+            
+            <div className="flex items-center gap-2 mt-1">
               <input
-                id="youtube-max-comments"
-                type="range"
-                min={50}
-                max={500}
-                step={50}
-                value={maxComments}
-                onChange={(e) => setMaxComments(Number(e.target.value))}
-                disabled={isPending}
-                className="flex-1 accent-red-500"
+                type="checkbox"
+                id="forceRefreshYt"
+                checked={forceRefresh}
+                onChange={(e) => setForceRefresh(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-600 text-red-600 focus:ring-red-600 bg-gray-700"
               />
-              <span className="text-xs font-mono text-red-400 w-8 text-right">
-                {maxComments}
-              </span>
+              <label htmlFor="forceRefreshYt" className="text-sm text-gray-400 select-none cursor-pointer">
+                Forzar extracción desde cero (borra caché existente)
+              </label>
             </div>
           </form>
         )}

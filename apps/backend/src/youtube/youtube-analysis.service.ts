@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { YoutubeService, YoutubeComment } from './youtube.service';
 import { NarrativeAuditorService, ContentAuditorResult } from '../ai/auditor.logic';
 import { ReportsService } from './reports.service';
+import { VectorStoreService, StoredComment } from '../ai/vector-store.service';
 import {
   PainPoint,
   ClusterNode,
@@ -16,6 +17,7 @@ export interface YoutubeAnalysisResult {
   totalComments: number;
   csvPath: string;
   csvReused: boolean;
+  dbReused: boolean;
   reportPath: string;
   painPoints: PainPoint[];
   clusters: {
@@ -32,6 +34,7 @@ export interface YoutubeContentIdeasResult {
   totalComments: number;
   csvPath: string;
   csvReused: boolean;
+  dbReused: boolean;
   reportPath: string;
   audienceSentiment: string;
   unmetNeed: string;
@@ -48,35 +51,81 @@ export interface YoutubeContentIdeasResult {
 export class YoutubeAnalysisService {
   private readonly logger = new Logger(YoutubeAnalysisService.name);
 
-  // Cuántos comentarios enviamos al LLM como contexto (top N por likes)
-  private readonly COMMENTS_FOR_AI = 5;
+  // Comentarios representativos que se pasan al LLM (seleccionados por MMR)
+  private readonly COMMENTS_FOR_AI = 15;
 
   constructor(
     private readonly youtubeService: YoutubeService,
     private readonly auditorService: NarrativeAuditorService,
     private readonly reportsService: ReportsService,
+    private readonly vectorStore: VectorStoreService,
   ) {}
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Helper: Obtener comentarios (reutiliza CSV si existe, si no llama a la API)
+  // Helper: Cadena de fallback de 3 capas
+  //   1. DB (vectores ya guardados) → MMR directo, 0 API calls
+  //   2. CSV en disco → vectorizar con Ollama → guardar en DB → MMR
+  //   3. API YouTube → guardar CSV → vectorizar → guardar DB → MMR
   // ─────────────────────────────────────────────────────────────────────────
-  private async getComments(
+  private async getCommentsForAnalysis(
     videoId: string,
     videoUrl: string,
     maxComments: number,
-  ): Promise<{ comments: YoutubeComment[]; csvPath: string; csvReused: boolean }> {
-    const existing = await this.reportsService.findExistingCsv(videoId);
-
-    if (existing) {
-      const comments = await this.reportsService.loadCommentsFromCsv(existing);
-      this.logger.log(`CSV reutilizado (${comments.length} comentarios) de: ${existing}`);
-      return { comments, csvPath: existing, csvReused: true };
+    forceRefresh: boolean = false,
+  ): Promise<{
+    representative: StoredComment[];
+    totalComments: number;
+    csvPath: string;
+    csvReused: boolean;
+    dbReused: boolean;
+  }> {
+    // ── Purga Manual (Force Refresh) ────────────────────────
+    if (forceRefresh) {
+      this.logger.log(`🧹 Force Refresh activado para [${videoId}]. Purgando caché...`);
+      await this.vectorStore.deleteSource(videoId);
+      
+      const existingCsv = await this.reportsService.findExistingCsv(videoId);
+      if (existingCsv) {
+        const csvFileName = existingCsv.split('/').pop()!;
+        await this.reportsService.deleteCsv(csvFileName, 'youtube');
+        this.logger.log(`🗑️ CSV eliminado: ${csvFileName}`);
+      }
     }
 
-    this.logger.log(`Sin CSV previo — llamando a la API de YouTube para: ${videoUrl}`);
-    const comments = await this.youtubeService.fetchComments(videoId, maxComments);
-    const csvPath = await this.reportsService.writeCsv(comments, videoId);
-    return { comments, csvPath, csvReused: false };
+    // ── Capa 1: DB ──────────────────────────────────────────────────────────
+    if (!forceRefresh && await this.vectorStore.hasEmbeddings(videoId)) {
+      this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para [${videoId}]`);
+      const representative = await this.vectorStore.pickRepresentative(videoId, this.COMMENTS_FOR_AI);
+      return { representative, totalComments: representative.length, csvPath: '', csvReused: false, dbReused: true };
+    }
+
+    // ── Capa 2 y 3: CSV o API ────────────────────────────────────────────────
+    let comments: YoutubeComment[];
+    let csvPath: string;
+    let csvReused: boolean;
+
+    const existingCsv = !forceRefresh ? await this.reportsService.findExistingCsv(videoId) : null;
+    if (existingCsv) {
+      this.logger.log(`✅ Capa 2 (CSV): Reutilizando ${existingCsv}`);
+      comments = await this.reportsService.loadCommentsFromCsv(existingCsv);
+      csvPath = existingCsv;
+      csvReused = true;
+    } else {
+      this.logger.log(`📱 Capa 3 (API YouTube): Descargando comentarios de ${videoUrl}`);
+      comments = await this.youtubeService.fetchComments(videoId, maxComments);
+      csvPath = await this.reportsService.writeCsv(comments, videoId);
+      csvReused = false;
+    }
+
+    // Vectorizar y guardar en DB (en background-friendly: await para garantizar consistencia)
+    await this.vectorStore.saveMany(
+      comments.map((c) => ({ externalId: c.id, content: c.text, author: c.author, likeCount: c.likeCount })),
+      videoId,
+      'youtube',
+    );
+
+    const representative = await this.vectorStore.pickRepresentative(videoId, this.COMMENTS_FOR_AI);
+    return { representative, totalComments: comments.length, csvPath, csvReused, dbReused: false };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -84,30 +133,27 @@ export class YoutubeAnalysisService {
   // ─────────────────────────────────────────────────────────────────────────
   async analyzeVideo(
     videoUrl: string,
-    maxComments: number = 200,
+    maxComments: number = 5000,
+    forceRefresh: boolean = false,
   ): Promise<YoutubeAnalysisResult> {
     this.logger.log(`Iniciando análisis Pain Points para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
     const videoTitle = await this.youtubeService.getVideoTitle(videoId);
-    const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
+    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments, forceRefresh);
 
-    const topComments = [...comments]
-      .sort((a, b) => b.likeCount - a.likeCount)
-      .slice(0, this.COMMENTS_FOR_AI);
-
-    this.logger.log(`Enviando ${topComments.length} comentarios top al Narrative Auditor...`);
+    this.logger.log(`Enviando ${representative.length} comentarios representativos (MMR) al Narrative Auditor...`);
 
     const analysisResults: any[] = [];
-    for (const comment of topComments) {
+    for (const comment of representative) {
       try {
         const result = await this.auditorService.analyzeNarrative({
           communityName: `YouTube Video: ${videoId}`,
           title: `Comentario de ${comment.author} (${comment.likeCount} likes)`,
-          comments: comment.text.slice(0, 1000),
+          comments: comment.content.slice(0, 1000),
         });
         analysisResults.push({
-          title: `${comment.author}: "${comment.text.slice(0, 60)}..."`,
+          title: `${comment.author}: "${comment.content.slice(0, 60)}..."`,
           score: result.frustrationScore,
           opportunity: result.businessOpportunity,
           mainPainPoint: result.mainPainPoint,
@@ -126,11 +172,14 @@ export class YoutubeAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
+    // Ordenar de mayor a menor dolor
+    painPoints.sort((a, b) => b.score - a.score);
+
     const clusters = this.buildClusters(analysisResults, videoId);
     const analyzedAt = new Date().toISOString();
 
     const partial = { videoId, videoTitle, videoUrl, analyzedAt,
-      totalComments: comments.length, csvPath, csvReused, reportPath: '', painPoints, clusters };
+      totalComments, csvPath, csvReused, dbReused, reportPath: '', painPoints, clusters };
     const reportPath = await this.exportPainPointsMarkdown(partial);
 
     return { ...partial, reportPath };
@@ -141,23 +190,19 @@ export class YoutubeAnalysisService {
   // ─────────────────────────────────────────────────────────────────────────
   async analyzeContentIdeas(
     videoUrl: string,
-    maxComments: number = 200,
+    maxComments: number = 5000,
+    forceRefresh: boolean = false,
   ): Promise<YoutubeContentIdeasResult> {
     this.logger.log(`Iniciando análisis Content Ideas para: ${videoUrl}`);
 
     const videoId = this.youtubeService.extractVideoId(videoUrl);
     const videoTitle = await this.youtubeService.getVideoTitle(videoId);
-    const { comments, csvPath, csvReused } = await this.getComments(videoId, videoUrl, maxComments);
+    const { representative, totalComments, csvPath, csvReused, dbReused } = await this.getCommentsForAnalysis(videoId, videoUrl, maxComments, forceRefresh);
 
-    const COMMENTS_FOR_CONTENT_IDEAS = 20;
-    const topComments = [...comments]
-      .sort((a, b) => b.likeCount - a.likeCount)
-      .slice(0, COMMENTS_FOR_CONTENT_IDEAS);
+    this.logger.log(`Enviando bloque de ${representative.length} comentarios representativos (MMR) al Narrative Auditor...`);
 
-    this.logger.log(`Enviando bloque de ${topComments.length} comentarios al Narrative Auditor...`);
-
-    const concatenatedComments = topComments
-      .map((c) => `- ${c.author} (${c.likeCount} likes): ${c.text}`)
+    const concatenatedComments = representative
+      .map((c) => `- ${c.author} (${c.likeCount} likes): ${c.content}`)
       .join('\n');
 
     let auditorResult: ContentAuditorResult;
@@ -174,7 +219,7 @@ export class YoutubeAnalysisService {
     const analyzedAt = new Date().toISOString();
     const partial = {
       videoId, videoTitle, videoUrl, analyzedAt,
-      totalComments: comments.length, csvPath, csvReused, reportPath: '',
+      totalComments, csvPath, csvReused, dbReused, reportPath: '',
       audienceSentiment: auditorResult.audienceSentiment,
       unmetNeed: auditorResult.unmetNeed,
       contentIdeas: auditorResult.contentIdeas,

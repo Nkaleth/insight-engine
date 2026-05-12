@@ -42,7 +42,7 @@ export class NarrativeAuditorService {
     try {
       // Llamada al LLM
       const response = await this.ollamaClient.chat({
-        model: 'gemma4:e4b', // Usamos el modelo que tienes instalado
+        model: 'iaprofesseur/SuperGemma4-26b-uncensored-Q4:latest', // Usamos el modelo que tienes instalado
         messages: [{ role: 'user', content: prompt }],
         // [HUECO 5]: Forzamos a que Ollama nos devuelva ESTRICTAMENTE este formato
         format: 'json',

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RedditService } from './reddit.service';
 import { NarrativeAuditorService } from '../ai/auditor.logic';
 import { ReportsService } from '../youtube/reports.service';
+import { VectorStoreService, StoredComment } from '../ai/vector-store.service';
 import * as path from 'path';
 
 export interface PainPoint {
@@ -32,6 +33,7 @@ export interface AnalysisResult {
   totalPosts: number;
   csvPath: string;
   csvReused: boolean;
+  dbReused: boolean;
   reportPath: string;
   painPoints: PainPoint[];
   clusters: {
@@ -48,78 +50,138 @@ export class RedditAnalysisService {
     private readonly redditService: RedditService,
     private readonly auditorService: NarrativeAuditorService,
     private readonly reportsService: ReportsService,
+    private readonly vectorStore: VectorStoreService,
   ) {}
 
-  async analyzeSubreddit(input: string, limit: number): Promise<AnalysisResult> {
-    this.logger.log(`Iniciando análisis para: ${input}`);
+  private async getPostsForAnalysis(
+    input: string,
+    limit: number,
+    forceRefresh: boolean = false,
+  ): Promise<{
+    representative: StoredComment[];
+    subredditName: string;
+    totalPosts: number;
+    csvPath: string;
+    csvReused: boolean;
+    dbReused: boolean;
+    isDirectUrl: boolean;
+    isTopicSearch: boolean;
+    topicQuery: string;
+  }> {
+    let isTopicSearch = false;
+    let isDirectUrl = false;
+    let topicQuery = '';
 
-    const isDirectUrl = input.startsWith('http');
-    let subredditName = input;
-    let postsToAnalyze: any[] = [];
-    let totalPosts = 0;
+    if (input.startsWith('http')) {
+      if (input.includes('/search')) {
+        isTopicSearch = true;
+        const urlObj = new URL(input);
+        topicQuery = urlObj.searchParams.get('q') || 'unknown';
+      } else {
+        isDirectUrl = true;
+      }
+    } else if (input.startsWith('topic:')) {
+      isTopicSearch = true;
+      topicQuery = input.replace('topic:', '').trim();
+    } else if (input.includes(' ')) {
+      isTopicSearch = true;
+      topicQuery = input.trim();
+    }
+
+    let sourceId = '';
+    if (isTopicSearch) {
+      sourceId = `topic_${topicQuery.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    } else if (isDirectUrl) {
+      const match = input.match(/comments\/([a-zA-Z0-9]+)/);
+      sourceId = match ? `post_${match[1]}` : `post_${Date.now()}`;
+    } else {
+      sourceId = input;
+    }
+
+    let posts: any[] = [];
     let csvPath = '';
     let csvReused = false;
 
-    if (isDirectUrl) {
-      // URL directa — sin caché (única petición, no repetible)
-      const raw = await this.redditService.fetchPostByUrl(input);
-      subredditName = raw[0].data.subreddit;
-      postsToAnalyze = raw.map((p: any) => p.data);
-      totalPosts = postsToAnalyze.length;
-    } else {
-      // Subreddit — intentar reutilizar CSV primero
-      const existingCsv = await this.reportsService.findExistingRedditCsv(subredditName);
-
+    // ── Purga Manual (Force Refresh) ────────────────────────
+    if (forceRefresh) {
+      this.logger.log(`🧹 Force Refresh activado para ${sourceId}. Purgando caché...`);
+      await this.vectorStore.deleteSource(sourceId);
+      
+      const existingCsv = await this.reportsService.findExistingRedditCsv(sourceId);
       if (existingCsv) {
-        postsToAnalyze = await this.reportsService.loadRedditPostsFromCsv(existingCsv);
-        totalPosts = postsToAnalyze.length;
-        csvPath = existingCsv;
-        csvReused = true;
-        this.logger.log(`CSV Reddit reutilizado (${totalPosts} posts)`);
-      } else {
-        const rawPosts = await this.redditService.fetchSubredditHot(subredditName, limit);
-        const allData = rawPosts.map((p: any) => p.data);
-        totalPosts = allData.length;
-
-        // Guardar CSV con TODOS los posts
-        csvPath = await this.reportsService.writeRedditCsv(allData, subredditName);
-
-        // Aplicar filtros de calidad para el análisis IA
-        postsToAnalyze = allData
-          .filter((p: any) => p.selftext && p.selftext.length > 50)
-          .filter((p: any) => p.num_comments >= 10)
-          .slice(0, 2);
+        const csvFileName = existingCsv.split('/').pop()!;
+        await this.reportsService.deleteCsv(csvFileName, 'reddit');
+        this.logger.log(`🗑️ CSV eliminado: ${csvFileName}`);
       }
     }
 
-    // Filtros de calidad si venía del CSV (mantener coherencia)
-    if (csvReused) {
-      postsToAnalyze = postsToAnalyze
-        .filter((p: any) => p.selftext && p.selftext.length > 50)
-        .filter((p: any) => p.num_comments >= 10)
-        .slice(0, 2);
+    // ── Capa 1: DB ──────────────────────────────────────────
+    if (!forceRefresh && await this.vectorStore.hasEmbeddings(sourceId)) {
+      this.logger.log(`✅ Capa 1 (DB): Vectores encontrados para ${sourceId}`);
+      const representative = await this.vectorStore.pickRepresentative(sourceId, 15);
+      return { representative, subredditName: sourceId, totalPosts: representative.length, csvPath: '', csvReused: false, dbReused: true, isDirectUrl, isTopicSearch, topicQuery };
     }
 
-    this.logger.log(`Enviando ${postsToAnalyze.length} posts al Narrative Auditor...`);
+    // ── Capa 2: CSV ─────────────────────────────────────────
+    const existingCsv = !forceRefresh ? await this.reportsService.findExistingRedditCsv(sourceId) : null;
+    if (existingCsv) {
+      this.logger.log(`✅ Capa 2 (CSV): Reutilizando ${existingCsv}`);
+      posts = await this.reportsService.loadRedditPostsFromCsv(existingCsv);
+      csvPath = existingCsv;
+      csvReused = true;
+    } else {
+      // ── Capa 3: API ───────────────────────────────────────
+      this.logger.log(`📱 Capa 3 (API Reddit): Descargando ${sourceId}`);
+      if (isTopicSearch) {
+        const rawPosts = await this.redditService.fetchTopicComments(topicQuery, limit);
+        posts = rawPosts.map((p: any) => p.data);
+      } else if (isDirectUrl) {
+        const raw = await this.redditService.fetchPostByUrl(input);
+        posts = raw.map((p: any) => p.data);
+      } else {
+        const rawPosts = await this.redditService.fetchSubredditHot(input, limit);
+        posts = rawPosts.map((p: any) => p.data);
+      }
+      csvPath = await this.reportsService.writeRedditCsv(posts, sourceId);
+      csvReused = false;
+    }
+
+    await this.vectorStore.saveMany(
+      posts.map((p) => ({ externalId: p.name || p.id, content: `${p.title}\n${p.selftext || ''}`, author: p.author, likeCount: p.score || p.ups })),
+      sourceId,
+      'reddit',
+    );
+
+    const representative = await this.vectorStore.pickRepresentative(sourceId, 15);
+    return { representative, subredditName: sourceId, totalPosts: posts.length, csvPath, csvReused, dbReused: false, isDirectUrl, isTopicSearch, topicQuery };
+  }
+
+  async analyzeSubreddit(input: string, limit: number, forceRefresh: boolean = false): Promise<AnalysisResult> {
+    this.logger.log(`Iniciando análisis (Reddit) para: ${input}`);
+
+    const { representative, subredditName, totalPosts, csvPath, csvReused, dbReused, isDirectUrl, isTopicSearch, topicQuery } = 
+      await this.getPostsForAnalysis(input, limit, forceRefresh);
+
+    this.logger.log(`Enviando ${representative.length} posts representativos (MMR) al Narrative Auditor...`);
 
     // Analizar con Ollama — secuencial para no saturar VRAM
     const analysisResults: any[] = [];
-    for (const post of postsToAnalyze) {
+    for (const post of representative) {
       try {
         const result = await this.auditorService.analyzeNarrative({
           communityName: subredditName,
-          title: post.title,
-          comments: post.selftext.slice(0, 1000),
+          title: `Post de ${post.author} (${post.likeCount} upvotes)`,
+          comments: post.content.slice(0, 1000),
         });
         analysisResults.push({
-          title: post.title,
+          title: post.content.split('\n')[0].slice(0, 80),
           score: result.frustrationScore,
           opportunity: result.businessOpportunity,
           mainPainPoint: result.mainPainPoint,
-          sourceUrl: `https://reddit.com${post.permalink}`,
+          sourceUrl: isDirectUrl ? input : `https://reddit.com/r/${subredditName}`,
         });
       } catch (err) {
-        this.logger.warn(`Falló análisis de post: ${post.title} — ${err.message}`);
+        this.logger.warn(`Falló análisis de post: ${err.message}`);
       }
     }
 
@@ -131,9 +193,12 @@ export class RedditAnalysisService {
       mainPainPoint: r.mainPainPoint,
     }));
 
+    // Ordenar de mayor a menor dolor
+    painPoints.sort((a, b) => b.score - a.score);
+
     const clusters = this.buildClusters(analysisResults, subredditName);
     const analyzedAt = new Date().toISOString();
-    const inputUrl = isDirectUrl ? input : `https://reddit.com/r/${subredditName}`;
+    const inputUrl = isDirectUrl ? input : (isTopicSearch ? `https://reddit.com/search/?q=${encodeURIComponent(topicQuery)}` : `https://reddit.com/r/${subredditName}`);
 
     const reportPath = await this.exportToMarkdown({
       subreddit: subredditName,
@@ -142,6 +207,7 @@ export class RedditAnalysisService {
       totalPosts,
       csvPath,
       csvReused,
+      dbReused,
       reportPath: '',
       painPoints,
       clusters,
@@ -154,6 +220,7 @@ export class RedditAnalysisService {
       totalPosts,
       csvPath,
       csvReused,
+      dbReused,
       reportPath,
       painPoints,
       clusters,

@@ -21,6 +21,10 @@ export class RedditService {
     this.userAgent = this.configService.getOrThrow<string>('REDDIT_USER_AGENT');
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   async fetchSubredditHot(subreddit: string, limit: number = 10): Promise<any> {
     // 7. Inyecta la variable "limit" en la URL usando template literals (backticks)
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=${limit}`;
@@ -79,18 +83,78 @@ export class RedditService {
         })
       );
 
-      // Cuando pides un post directo con .json, Reddit devuelve un arreglo:
       // [0] = El post original
       // [1] = Los comentarios
-      // Nosotros solo necesitamos el post original estructurado igual que fetchSubredditHot
-      const postData = response.data[0].data.children;
-      return postData;
+      const postNode = response.data[0]?.data?.children[0]?.data || {};
+      const comments = response.data[1]?.data?.children
+        .filter((c: any) => c.kind === 't1')
+        .map((c: any) => ({
+          data: {
+            ...c.data,
+            title: `Comentario de ${c.data.author}`,
+            selftext: c.data.body,
+            subreddit: postNode.subreddit || 'unknown',
+            num_comments: 0,
+          }
+        })) || [];
+
+      if (comments.length === 0) {
+        // Fallback al post si no hay comentarios
+        return response.data[0].data.children;
+      }
+      return comments;
     } catch (error) {
       if (error.response && error.response.status === 404) {
         throw new NotFoundException(`El post '${postUrl}' no fue encontrado.`);
       }
       this.logger.error(`Error al extraer post directo de Reddit: ${error.message}`);
       throw new InternalServerErrorException('Error conectando con Reddit.');
+    }
+  }
+
+  async fetchTopicComments(topic: string, limit: number = 10): Promise<any[]> {
+    const searchUrl = `https://www.reddit.com/search.json?q=${encodeURIComponent(topic)}&limit=${limit}`;
+    this.logger.log(`Buscando posts del topic: ${searchUrl}`);
+
+    try {
+      // 1. Obtener los posts del Topic
+      const response = await firstValueFrom(
+        this.httpService.get(searchUrl, {
+          headers: { 'User-Agent': this.userAgent }
+        })
+      );
+
+      const posts = response.data.data.children.map((c: any) => c.data);
+      this.logger.log(`Encontrados ${posts.length} posts para el topic "${topic}". Extrayendo comentarios...`);
+
+      let allComments: any[] = [];
+
+      // 2. Iterar cada post y extraer sus comentarios (con delay de seguridad)
+      for (let i = 0; i < posts.length; i++) {
+        const post = posts[i];
+        if (!post.permalink) continue;
+
+        const postUrl = `https://www.reddit.com${post.permalink}`;
+        try {
+          const comments = await this.fetchPostByUrl(postUrl);
+          // fetchPostByUrl devuelve los comentarios formateados o el post principal
+          allComments = allComments.concat(comments);
+        } catch (err) {
+          this.logger.warn(`No se pudieron extraer comentarios del post ${postUrl}: ${err.message}`);
+        }
+
+        // Delay de 2000ms para evitar rate limiting de Reddit en búsquedas masivas
+        if (i < posts.length - 1) {
+          await this.sleep(2000);
+        }
+      }
+
+      this.logger.log(`Total de comentarios extraídos para el topic "${topic}": ${allComments.length}`);
+      return allComments;
+
+    } catch (error) {
+      this.logger.error(`Error al buscar topic en Reddit: ${error.message}`);
+      throw new InternalServerErrorException('Error buscando el topic en Reddit.');
     }
   }
 }

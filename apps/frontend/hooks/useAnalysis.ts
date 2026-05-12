@@ -41,10 +41,11 @@ interface BackendResponse<T> {
 
 export function useRedditAnalysis() {
   return useMutation({
-    mutationFn: async (subreddit: string) => {
+    mutationFn: async ({ subreddit, forceRefresh = false }: { subreddit: string, forceRefresh?: boolean }) => {
       const response = await apiClient.post<BackendResponse<AnalysisResult>>('/reddit/analyze', {
         subreddit,
-        limit: 15 // Scrappeamos los 15 posts más hot
+        limit: 50,
+        forceRefresh
       });
       return response.data.data;
     },
@@ -73,14 +74,14 @@ export function useYoutubeAnalysis() {
   return useMutation({
     mutationFn: async ({
       videoUrl,
-      maxComments = 200,
+      forceRefresh = false,
     }: {
       videoUrl: string;
-      maxComments?: number;
+      forceRefresh?: boolean;
     }) => {
       const response = await apiClient.post<BackendResponse<YoutubeAnalysisResult>>(
         '/youtube/analyze',
-        { videoUrl, maxComments },
+        { videoUrl, forceRefresh },
       );
       return response.data.data;
     },
@@ -113,14 +114,14 @@ export function useYoutubeContentIdeas() {
   return useMutation({
     mutationFn: async ({
       videoUrl,
-      maxComments = 200,
+      forceRefresh = false,
     }: {
       videoUrl: string;
-      maxComments?: number;
+      forceRefresh?: boolean;
     }) => {
       const response = await apiClient.post<BackendResponse<YoutubeContentIdeasResult>>(
         '/youtube/content-ideas',
-        { videoUrl, maxComments },
+        { videoUrl, forceRefresh },
       );
       return response.data.data;
     },

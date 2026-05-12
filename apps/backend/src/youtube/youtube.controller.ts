@@ -15,15 +15,15 @@ export class YoutubeController {
   @ApiOperation({ summary: 'Analizar comentarios de un video de YouTube' })
   @Post('analyze')
   async analyze(@Body() body: AnalyzeYoutubeDto) {
-    const { videoUrl, maxComments = 200 } = body;
-    return this.youtubeAnalysisService.analyzeVideo(videoUrl, maxComments);
+    const { videoUrl, maxComments = 5000, forceRefresh = false } = body;
+    return this.youtubeAnalysisService.analyzeVideo(videoUrl, maxComments, forceRefresh);
   }
 
   @ApiOperation({ summary: 'Generar ideas de contenido de un video de YouTube' })
   @Post('content-ideas')
   async contentIdeas(@Body() body: AnalyzeYoutubeDto) {
-    const { videoUrl, maxComments = 200 } = body;
-    return this.youtubeAnalysisService.analyzeContentIdeas(videoUrl, maxComments);
+    const { videoUrl, maxComments = 5000, forceRefresh = false } = body;
+    return this.youtubeAnalysisService.analyzeContentIdeas(videoUrl, maxComments, forceRefresh);
   }
 
   @ApiOperation({ summary: 'Listar todos los reportes guardados' })
