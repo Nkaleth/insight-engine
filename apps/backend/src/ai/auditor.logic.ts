@@ -17,7 +17,7 @@ export interface ContentAuditorResult {
   contentIdeas: {
     opportunityScore: number;
     demandEvidence: string;
-    titleIdea: string;
+    videoIdea: string;
     format: string;
     hook: string;
   }[];
