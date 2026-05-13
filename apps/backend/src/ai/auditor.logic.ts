@@ -1,6 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { Ollama } from 'ollama';
-import { OLLAMA_CLIENT } from './ai.constants';
+import OpenAI from 'openai';
+import { LLAMACPP_CLIENT } from './ai.constants';
 import { generateSociologicalPrompt, generateContentOpportunityPrompt } from './prompts/prompts.library';
 import { AnalysisContext, ContentAnalysisContext } from './prompts/prompt.interface';
 
@@ -17,7 +17,7 @@ export interface ContentAuditorResult {
   contentIdeas: {
     opportunityScore: number;
     demandEvidence: string;
-    titleIdea: string;
+    videoIdea: string;
     format: string;
     hook: string;
   }[];
@@ -28,37 +28,30 @@ export class NarrativeAuditorService {
   private readonly logger = new Logger(NarrativeAuditorService.name);
 
   constructor(
-    // [HUECO 1]: Inyectamos nuestro motor Ollama usando el token constante correcto
-    @Inject(OLLAMA_CLIENT) private readonly ollamaClient: Ollama,
+    // Inyectamos el cliente OpenAI apuntando a llama.cpp server
+    @Inject(LLAMACPP_CLIENT) private readonly llm: OpenAI,
   ) { }
 
-  // [HUECO 2]: Define el tipo de dato de entrada y [HUECO 3] el tipo de dato de salida (promesa)
+  // Define el tipo de dato de entrada y el tipo de dato de salida (promesa)
   async analyzeNarrative(context: AnalysisContext): Promise<AuditorResult> {
     this.logger.log(`Iniciando auditoría narrativa para la comunidad: ${context.communityName}`);
 
-    // [HUECO 4]: Usa la función correcta de nuestra librería para armar el prompt final
     const prompt = generateSociologicalPrompt(context);
 
     try {
-      // Llamada al LLM
-      const response = await this.ollamaClient.chat({
-        model: 'iaprofesseur/SuperGemma4-26b-uncensored-Q4:latest', // Usamos el modelo que tienes instalado
+      // Llamada al LLM via llama.cpp (OpenAI-compatible API)
+      const response = await this.llm.chat.completions.create({
+        model: 'qwen3.6-35b', // llama.cpp usa el modelo que tiene cargado; nombre descriptivo
         messages: [{ role: 'user', content: prompt }],
-        // [HUECO 5]: Forzamos a que Ollama nos devuelva ESTRICTAMENTE este formato
-        format: 'json',
-        options: {
-          temperature: 0.2, // Baja creatividad, queremos hechos y análisis frío
-        },
+        response_format: { type: 'json_object' },
+        temperature: 0.2, // Baja creatividad, queremos hechos y análisis frío
       });
 
-      const rawText = response.message.content;
+      const rawText = response.choices[0]?.message?.content ?? '';
 
-      // Pequeño truco defensivo: Nuestro prompt en prompts.library.ts terminaba en "{"
-      // A veces la API de 'chat' ignora eso y manda un JSON completo, o a veces manda el resto del objeto.
-      // Si la IA fue obediente, empezará directamente con "frustrationScore": ...
+      // Pequeño truco defensivo: a veces la respuesta no empieza con "{"
       const jsonString = rawText.trim().startsWith('{') ? rawText : '{' + rawText;
 
-      // [HUECO 6]: Convierte el string de texto a un objeto JavaScript real
       const parsedResult: AuditorResult = JSON.parse(jsonString);
 
       this.logger.log('Análisis completado exitosamente.');
@@ -75,16 +68,14 @@ export class NarrativeAuditorService {
     const prompt = generateContentOpportunityPrompt(context);
 
     try {
-      const response = await this.ollamaClient.chat({
-        model: 'gemma4:e4b',
+      const response = await this.llm.chat.completions.create({
+        model: 'qwen3.6-35b', // llama.cpp usa el modelo que tiene cargado
         messages: [{ role: 'user', content: prompt }],
-        format: 'json',
-        options: {
-          temperature: 0.4, // Un poco más de creatividad para idear contenido
-        },
+        response_format: { type: 'json_object' },
+        temperature: 0.4, // Un poco más de creatividad para idear contenido
       });
 
-      const rawText = response.message.content;
+      const rawText = response.choices[0]?.message?.content ?? '';
       const jsonString = rawText.trim().startsWith('{') ? rawText : '{' + rawText;
 
       const parsedResult: ContentAuditorResult = JSON.parse(jsonString);

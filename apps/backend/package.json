@@ -41,6 +41,7 @@
     "googleapis": "^171.4.0",
     "nest-winston": "^1.10.2",
     "ollama": "^0.6.3",
+    "openai": "^6.37.0",
     "p-limit": "^7.3.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

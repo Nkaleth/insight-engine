@@ -83,8 +83,8 @@ export const generateContentOpportunityPrompt = (context: ContentAnalysisContext
         {
           "opportunityScore": [número entero del 6 al 10],
           "demandEvidence": "[Cita o parafraseo de 1-3 comentarios que justifican este score]",
-          "titleIdea": "[Título atractivo con alto CTR para YouTube]",
-          "format": "[Ej: Documental, Short, Ensayo, Tutorial, Debate, etc.]",
+          "videoIdea": "[Idea de video bien elaborada y sustentada analíticamente basada en la demanda, no solo un título. Desarrolla el concepto.]",
+          "format": "Faceless video",
           "hook": "[Frase o imagen de gancho para los primeros 5 segundos]"
         }
       ]
@@ -111,15 +111,15 @@ export const generateContentOpportunityPrompt = (context: ContentAnalysisContext
         {
           "opportunityScore": 9,
           "demandEvidence": "Dos comentarios preguntan explícitamente sobre los trajes y la colonia norte.",
-          "titleIdea": "El oscuro secreto de los trajes de supervivencia en [Planeta]",
-          "format": "Micro-historia / Short",
+          "videoIdea": "Explorar en profundidad el funcionamiento técnico y los fallos letales de los trajes térmicos en condiciones extremas, vinculando su mal funcionamiento con el evento de extinción de la colonia norte.",
+          "format": "Faceless video",
           "hook": "¿Qué pasaba dentro de los trajes cuando la energía se agotaba?"
         },
         {
           "opportunityScore": 7,
           "demandEvidence": "Un comentario pide resolución del conflicto de la colonia norte.",
-          "titleIdea": "Lo que realmente pasó con la Colonia del Norte",
-          "format": "Ensayo Narrativo",
+          "videoIdea": "Un análisis narrativo paso a paso sobre los últimos días de la Colonia del Norte, detallando cómo la falla en la comunicación y escasez de recursos precipitó su caída.",
+          "format": "Faceless video",
           "hook": "Mientras el protagonista huía, el núcleo de la colonia colapsaba."
         }
       ]

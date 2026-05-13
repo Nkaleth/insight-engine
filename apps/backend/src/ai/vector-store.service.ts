@@ -1,4 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Ollama } from 'ollama';
+import { OLLAMA_CLIENT } from './ai.constants';
 import { EmbeddingsService } from './embeddings.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -46,6 +48,7 @@ export class VectorStoreService {
   constructor(
     private readonly embeddingsService: EmbeddingsService,
     private readonly prisma: PrismaService,
+    @Inject(OLLAMA_CLIENT) private readonly ollamaClient: Ollama,
   ) {}
 
   // ─── Consulta ─────────────────────────────────────────────────────────────
@@ -145,6 +148,9 @@ export class VectorStoreService {
     }
 
     this.logger.log(`✅ ${saved}/${valid.length} comentarios vectorizados en DB para [${sourceId}]`);
+
+    // Liberar VRAM: descargar modelo de embeddings para que llama.cpp tenga más VRAM
+    await this.unloadEmbeddingModel();
   }
 
   // ─── Selección representativa (MMR) ──────────────────────────────────────
@@ -242,5 +248,25 @@ export class VectorStoreService {
     }
 
     return selected;
+  }
+
+  // ─── Gestión de VRAM ────────────────────────────────────────────────────
+
+  /**
+   * Descarga el modelo de embeddings de Ollama para liberar VRAM.
+   * Esto permite que llama.cpp tenga la máxima VRAM disponible para auditoría.
+   */
+  private async unloadEmbeddingModel(): Promise<void> {
+    try {
+      this.logger.log('🧹 Liberando VRAM: descargando modelo de embeddings de Ollama...');
+      await this.ollamaClient.generate({
+        model: 'nomic-embed-text',
+        prompt: '',
+        keep_alive: 0,
+      });
+      this.logger.log('✅ Modelo de embeddings descargado de VRAM');
+    } catch (err) {
+      this.logger.warn(`No se pudo descargar el modelo de embeddings: ${err.message}`);
+    }
   }
 }
