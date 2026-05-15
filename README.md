@@ -3,7 +3,7 @@
   <p>A Micro-SaaS for "Frustration Archaeology", extracting massive community data to identify high-demand business niches using local AI.</p>
 
   <h3>Tech Stack</h3>
-  <p>Engineered with <b>NestJS</b>, <b>Next.js 14</b>, <b>Ollama</b>, and <b>BullMQ</b> for high-performance AI processing.</p>
+  <p>Engineered with <b>NestJS</b>, <b>Next.js 16</b>, <b>Ollama</b>, <b>llama.cpp</b>, and <b>BullMQ</b> for high-performance AI processing.</p>
 </div>
 
 ---
