@@ -73,7 +73,7 @@ insight-engine/
 ## 👥 Author
 **Nilton Segura (Nkaleth)**
 - GitHub: [@Nkaleth](https://github.com/Nkaleth)
-- LinkedIn: [Your LinkedIn Profile](https://linkedin.com/in/yourprofile) *(Update this link!)*
+- LinkedIn: [Nilton Segura](https://www.linkedin.com/in/niltonsegura)
 
 ## 🤝 Contributing
 Contributions, issues, and feature requests are welcome!
