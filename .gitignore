@@ -9,5 +9,4 @@ sprint-*.md
 troubleshooting-*.md
 
 # AI Reports & DB files
-apps/backend/reports/**/*.md
-apps/backend/reports/**/*.csv
+apps/backend/reports/
