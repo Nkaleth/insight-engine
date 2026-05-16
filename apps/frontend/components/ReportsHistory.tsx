@@ -53,6 +53,10 @@ function parsePainPointsMd(md: string): PainPoint[] {
 function parseContentIdeasMd(md: string): Partial<YoutubeContentIdeasResult> {
   const norm = md.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
+  // Parse videoTitle from the report header
+  const titleMatch = norm.match(/\*\*Título:\*\*\s*([^\n]+)/);
+  const videoTitle = titleMatch?.[1]?.trim() ?? "";
+
   // Parse audienceSentiment and unmetNeed from blockquote lines
   const sentMatch = norm.match(/\*\*Sentimiento General:\*\*\s*\n>\s*([^\n]+)/);
   const needMatch  = norm.match(/\*\*Necesidad No Cubierta:\*\*\s*\n>\s*([^\n]+)/);
@@ -81,7 +85,7 @@ function parseContentIdeasMd(md: string): Partial<YoutubeContentIdeasResult> {
       demandEvidence: getField("Evidencia de Demanda"),
     });
   }
-  return { audienceSentiment, unmetNeed, contentIdeas: ideas };
+  return { videoTitle, audienceSentiment, unmetNeed, contentIdeas: ideas };
 }
 
 // ── Delete confirmation dialog ─────────────────────────────────────────────
@@ -205,7 +209,7 @@ function ReportModal({ report, onClose }: { report: ReportSummary; onClose: () =
             <NeedFeed painPoints={parsedPainPoints} isLoading={false} sourceLabel={sourceLabel as "reddit" | "youtube"} />
           )}
           {content && report.type === "content-ideas" && (
-            <ContentIdeasFeed data={parsedIdeas as YoutubeContentIdeasResult} isLoading={false} />
+            <ContentIdeasFeed data={parsedIdeas as YoutubeContentIdeasResult} isLoading={false} videoTitle={report.videoTitle} />
           )}
         </div>
       </div>
