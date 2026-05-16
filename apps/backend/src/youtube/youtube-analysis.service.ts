@@ -41,7 +41,7 @@ export interface YoutubeContentIdeasResult {
   contentIdeas: {
     opportunityScore: number;
     demandEvidence: string;
-    titleIdea: string;
+    videoIdea: string;
     format: string;
     hook: string;
   }[];
@@ -283,7 +283,7 @@ export class YoutubeAnalysisService {
       } else {
         result.contentIdeas.forEach((idea, idx) => {
           const bar = '█'.repeat(idea.opportunityScore) + '░'.repeat(10 - idea.opportunityScore);
-          md += `### ${idx + 1}. "${idea.titleIdea}"\n`;
+          md += `### ${idx + 1}. Idea de Video\n> ${idea.videoIdea}\n\n`;
           md += `- **Opportunity Score:** ${idea.opportunityScore}/10 \`${bar}\`\n`;
           md += `- **Formato:** ${idea.format}\n`;
           md += `- **Evidencia de Demanda:** *${idea.demandEvidence}*\n`;

@@ -1,6 +1,7 @@
 "use client";
 
-import { Lightbulb, Film, Target, TrendingUp, Quote } from "lucide-react";
+import { useState } from "react";
+import { Lightbulb, Film, Target, TrendingUp, Quote, Copy, Check } from "lucide-react";
 import { YoutubeContentIdeasResult } from "../hooks/useAnalysis";
 
 interface ContentIdeasFeedProps {
@@ -36,6 +37,26 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
+// ── Copy Button Component ──────────────────────────────────────────────────
+function CopyBtn({ text, className = "" }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className={`p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 transition-colors cursor-pointer ${className}`}
+      title="Copiar contenido"
+    >
+      {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+    </button>
+  );
+}
+
 export default function ContentIdeasFeed({ data, isLoading = false }: ContentIdeasFeedProps) {
   if (isLoading) {
     return (
@@ -64,11 +85,17 @@ export default function ContentIdeasFeed({ data, isLoading = false }: ContentIde
   return (
     <div className="space-y-6">
       {/* Audience analysis panel */}
-      <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
-        <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
-          <Target className="text-purple-400" />
-          Análisis de la Audiencia
-        </h3>
+      <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 relative group">
+        <div className="flex items-start justify-between mb-4">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Target className="text-purple-400" />
+            Análisis de la Audiencia
+          </h3>
+          <CopyBtn 
+            text={`Análisis de la Audiencia:\nSentimiento General: ${data.audienceSentiment}\nNecesidad no cubierta: ${data.unmetNeed}`} 
+            className="opacity-0 group-hover:opacity-100 transition-opacity" 
+          />
+        </div>
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-400 uppercase tracking-wider font-semibold mb-1">
@@ -108,14 +135,17 @@ export default function ContentIdeasFeed({ data, isLoading = false }: ContentIde
                 key={index}
                 className="p-5 bg-gray-800 border border-purple-900/50 rounded-xl hover:border-purple-500/50 transition-colors"
               >
-                {/* Title + format badge */}
+                {/* Title + format badge + copy btn */}
                 <div className="flex justify-between items-start gap-4 mb-3">
                   <h4 className="font-bold text-lg text-white leading-tight">
-                    &ldquo;{idea.titleIdea}&rdquo;
+                    &ldquo;{idea.videoIdea || idea.titleIdea}&rdquo;
                   </h4>
-                  <span className="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-900/40 text-purple-300 border border-purple-800">
-                    {idea.format}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-purple-900/40 text-purple-300 border border-purple-800">
+                      {idea.format}
+                    </span>
+                    <CopyBtn text={idea.videoIdea || idea.titleIdea} />
+                  </div>
                 </div>
 
                 {/* Opportunity score bar */}

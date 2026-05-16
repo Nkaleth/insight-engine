@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   FileText, Lightbulb, Zap, Database, RefreshCw,
-  ExternalLink, Eye, X, Trash2, AlertTriangle,
+  ExternalLink, Eye, X, Trash2, AlertTriangle, Copy, Check,
 } from "lucide-react";
 import {
   useReports, useDeleteReport, useDeleteCsv, ReportSummary,
@@ -68,9 +68,13 @@ function parseContentIdeasMd(md: string): Partial<YoutubeContentIdeasResult> {
       const line = lines.find((l) => l.includes(`**${label}:**`));
       return line ? line.replace(/^.*\*\*[^*]+\*\*:?\s*\*?/, "").replace(/\*$/, "").trim() : "";
     };
+    const videoIdeaMatch = block.match(/\n>\s*(.+)/);
+    // Si es un reporte nuevo, tendrá un blockquote (>). Si es viejo, la idea está en el título.
+    const videoIdeaText = videoIdeaMatch ? videoIdeaMatch[1].trim() : titleLine;
+
     const scoreRaw = getField("Opportunity Score").replace(/\/10.*/, "").trim();
     ideas.push({
-      titleIdea: titleLine,
+      videoIdea: videoIdeaText,
       format: getField("Formato"),
       hook: getField("Hook").replace(/^"|"$/g, ""),
       opportunityScore: parseInt(scoreRaw) || 6,
@@ -123,6 +127,26 @@ function ConfirmDialog({
   );
 }
 
+// ── Copy Button Component ──────────────────────────────────────────────────
+function CopyBtn({ text, className = "" }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className={`p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 transition-colors cursor-pointer ${className}`}
+      title="Copiar"
+    >
+      {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+    </button>
+  );
+}
+
 // ── Human-readable report modal ────────────────────────────────────────────
 function ReportModal({ report, onClose }: { report: ReportSummary; onClose: () => void }) {
   const [content, setContent] = useState<string | null>(null);
@@ -162,12 +186,15 @@ function ReportModal({ report, onClose }: { report: ReportSummary; onClose: () =
             <FileText size={16}
               className={report.type === "pain-points" ? "text-orange-400" : "text-purple-400"} />
             <div className="min-w-0">
-              <p className="text-sm font-bold text-white truncate">{report.videoTitle}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold text-white truncate">{report.videoTitle}</p>
+                <CopyBtn text={report.videoTitle} className="shrink-0" />
+              </div>
               <p className="text-xs text-gray-500 font-mono truncate">{report.fileName}</p>
             </div>
           </div>
           <button onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors shrink-0 ml-3">
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors shrink-0 ml-3 cursor-pointer">
             <X size={16} />
           </button>
         </div>
@@ -221,7 +248,10 @@ function ReportCard({
 
       {/* Video / subreddit title */}
       <div>
-        <p className="text-sm font-semibold text-white leading-tight">{report.videoTitle}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-semibold text-white leading-tight">{report.videoTitle}</p>
+          <CopyBtn text={report.videoTitle} className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
         <a
           href={isReddit
             ? `https://reddit.com/r/${report.videoId}`
@@ -249,7 +279,7 @@ function ReportCard({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <button onClick={onView}
-            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
               isPainPoints
                 ? "bg-orange-900/30 text-orange-300 hover:bg-orange-800/40"
                 : "bg-purple-900/30 text-purple-300 hover:bg-purple-800/40"
@@ -258,12 +288,12 @@ function ReportCard({
           </button>
           {report.csvFile && (
             <button onClick={onDeleteCsv} title="Eliminar CSV"
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-400 px-2 py-1.5 rounded-lg hover:bg-red-900/20 transition-colors">
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-400 px-2 py-1.5 rounded-lg hover:bg-red-900/20 transition-colors cursor-pointer">
               <Database size={11} /><Trash2 size={11} />
             </button>
           )}
           <button onClick={onDeleteReport} title="Eliminar reporte"
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-400 px-2 py-1.5 rounded-lg hover:bg-red-900/20 transition-colors">
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-400 px-2 py-1.5 rounded-lg hover:bg-red-900/20 transition-colors cursor-pointer">
             <FileText size={11} /><Trash2 size={11} />
           </button>
         </div>
