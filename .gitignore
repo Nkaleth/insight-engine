@@ -1,2 +1,13 @@
 node_modules
 .env
+.env.local
+.DS_Store
+
+# Internal docs & sprint logs
+master_prompt_sprints.md
+sprint-*.md
+troubleshooting-*.md
+
+# AI Reports & DB files
+apps/backend/reports/**/*.md
+apps/backend/reports/**/*.csv
