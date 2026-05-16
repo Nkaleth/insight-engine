@@ -263,7 +263,7 @@ export default function Home() {
 
         {/* ── Content Ideas Feed ── */}
         {isYoutubeContentIdeas && (
-          <ContentIdeasFeed data={activeData as any} isLoading={isPending} />
+          <ContentIdeasFeed data={activeData as any} isLoading={isPending} videoTitle={(activeData as any)?.videoTitle} />
         )}
 
         {/* ── Reports History ── */}

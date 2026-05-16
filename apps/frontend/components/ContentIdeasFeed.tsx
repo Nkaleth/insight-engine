@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Lightbulb, Film, Target, TrendingUp, Quote, Copy, Check } from "lucide-react";
+import { Lightbulb, Film, Target, TrendingUp, Quote, Copy, Check, Sparkles } from "lucide-react";
 import { YoutubeContentIdeasResult } from "../hooks/useAnalysis";
 
 interface ContentIdeasFeedProps {
   data?: YoutubeContentIdeasResult;
   isLoading?: boolean;
+  videoTitle?: string;
 }
 
 function ScoreBar({ score }: { score: number }) {
@@ -57,7 +58,94 @@ function CopyBtn({ text, className = "" }: { text: string; className?: string })
   );
 }
 
-export default function ContentIdeasFeed({ data, isLoading = false }: ContentIdeasFeedProps) {
+// ── Viral Title Prompt Template ────────────────────────────────────────────
+function buildViralTitlePrompt(videoTitle: string, videoIdea: string, audienceSentiment: string, unmetNeed: string): string {
+  return `# 🎯 Plantilla Maestra: El Prompt Perfecto (Generador de Títulos Viral)
+
+**Rol / Persona (Role):** 
+Actúa como un Copywriter experto en YouTube y Estratega de Crecimiento especializado en Psicología del Click (CTR). Tu enfoque se basa en el análisis de "Video Outliers" (videos que rinden por encima del promedio) para extraer patrones de curiosidad y aplicarlos a nuevas ideas de contenido.
+
+**Tarea y Función (Task & Function):** 
+Tu tarea principal es generar 3 títulos definitivos para un video de YouTube, optimizados para pruebas A/B. Además, si el usuario te solicita posteriormente "3 títulos más" (o una cantidad específica), debes generar nuevas opciones inéditas aplicando exactamente las mismas reglas.
+La función de estos títulos es maximizar la tasa de apertura mediante una "Jerarquía Visual" específica que facilite el escaneo rápido del usuario mientras navega en el feed.
+
+**Tema y Enfoque (Topic & Focus):** 
+El contenido debe tratar sobre la transformación de una idea base (Programa/Contenido) en una promesa irresistible basada en un formato de éxito comprobado (Video Outlier).
+Debes enfocarte específicamente en la psicología de la "Brecha de Curiosidad" y en el cumplimiento estricto de la estructura visual de tres niveles.
+
+**Contexto y Audiencia (Context & Audience):** 
+Información de fondo: Los títulos en YouTube se cortan en dispositivos móviles a los 50-60 caracteres. El usuario promedio decide si hacer click en menos de un segundo.
+La audiencia objetivo vendrá definida en el input de "Análisis de Audiencia". Utiliza esa información para adaptar el vocabulario, las "Power Words" y los disparadores emocionales para que resuenen específicamente con sus intereses y puntos de dolor. 
+
+**Formato y Estructura (Output Format & Structure):** 
+Entregarás el resultado en un bloque de texto claro con las opciones solicitadas.
+Estructura la respuesta de esta manera:
+1. [TÍTULO 1]
+2. [TÍTULO 2]
+3. [TÍTULO 3]
+
+**Tono y Estilo (Tone & Style):** 
+El tono debe ser directo, autoritario y emocionante.
+El estilo de redacción debe ser minimalista pero cargado de palabras de alto impacto, eliminando cualquier palabra de relleno que no aporte valor al click.
+
+**Restricciones y Límites (Constraints):** 
+DEBES seguir las siguientes reglas estrictas en todo momento:
+- **Idioma:** Si el "Título Original", la "Idea de Video" o el "Análisis de Audiencia" están en inglés, los títulos generados DEBEN estar en inglés. Adapta siempre tu respuesta al idioma de los inputs proporcionados.
+- **Longitud:** Máximo 50 caracteres por título. Debes intentar acercarte lo más posible al límite de 50 para ocupar el espacio visual, pero NUNCA pasarte.
+- **Jerarquía Visual (Los 3 Escalones):**
+    - **1er Escalón (MAYÚSCULAS):** Solo para Palabras Importantes (verbos de acción, sustantivos clave, disparadores emocionales).
+    - **2do Escalón (Mayúscula Inicial):** Para las Palabras Restantes (adjetivos descriptivos, nombres propios).
+    - **3er Escalón (minúsculas):** Solo para Conectores (artículos, preposiciones, conjunciones: de, el, la, con, para, que, en, of, to, the, and, with, etc.).
+- **Sin Emojis ni Añadidos:** No incluyas iconos, hashtags, ni explicaciones adicionales. Solo devuelve los títulos solicitados.
+- **Persistencia de Reglas:** Si se te piden más títulos en la misma conversación, debes seguir aplicando el límite de caracteres, el idioma y la jerarquía visual sin excepciones.
+
+**Ejemplos / Analogías (Provide Examples):** 
+Para que te guíes, aquí tienes ejemplos de lo que considero un buen resultado:
+- Entrada de ejemplo 1 (Español): Outlier "Cómo gané 1000$". Idea: "Vender cursos".
+- Salida de ejemplo 1: GANA 1000$ Vendiendo Cursos de Forma RÁPIDA
+- Entrada de ejemplo 2 (Inglés): Outlier "I quit my job to do this". Idea: "Start a youtube channel".
+- Salida de ejemplo 2: I QUIT my Job to Start a YOUTUBE Channel
+
+--------------------------------------------------------------------------------
+[INPUTS]:
+Título Original (Video Outlier): ${videoTitle}
+Idea de Video (Programa): ${videoIdea}
+Análisis de Audiencia:
+Análisis de la Audiencia:
+Sentimiento General: ${audienceSentiment}
+Necesidad no cubierta: ${unmetNeed}
+
+[OUTPUT]:`;
+}
+
+// ── Prompt Copy Button ─────────────────────────────────────────────────────
+function PromptBtn({ videoTitle, videoIdea, audienceSentiment, unmetNeed }: {
+  videoTitle: string; videoIdea: string; audienceSentiment: string; unmetNeed: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const prompt = buildViralTitlePrompt(videoTitle, videoIdea, audienceSentiment, unmetNeed);
+        navigator.clipboard.writeText(prompt);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }}
+      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-900/30 text-amber-300 hover:bg-amber-800/40 transition-colors cursor-pointer border border-amber-800/50"
+      title="Copiar prompt completo para generar títulos virales"
+    >
+      {copied ? (
+        <><Check size={12} className="text-green-400" /> Copiado</>
+      ) : (
+        <><Sparkles size={12} /> Obtener Prompt</>
+      )}
+    </button>
+  );
+}
+
+export default function ContentIdeasFeed({ data, isLoading = false, videoTitle = "" }: ContentIdeasFeedProps) {
   if (isLoading) {
     return (
       <div className="p-8 text-center bg-gray-800/50 rounded-xl border border-gray-700 animate-pulse">
@@ -146,6 +234,16 @@ export default function ContentIdeasFeed({ data, isLoading = false }: ContentIde
                     </span>
                     <CopyBtn text={idea.videoIdea || idea.titleIdea} />
                   </div>
+                </div>
+
+                {/* Obtener Prompt button */}
+                <div className="mb-3">
+                  <PromptBtn
+                    videoTitle={videoTitle || data.videoTitle || ""}
+                    videoIdea={idea.videoIdea || idea.titleIdea}
+                    audienceSentiment={data.audienceSentiment}
+                    unmetNeed={data.unmetNeed}
+                  />
                 </div>
 
                 {/* Opportunity score bar */}
